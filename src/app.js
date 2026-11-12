@@ -223,7 +223,8 @@ function saveCust(acctKey, code, store){
   window.FFM_CUST_SHARED = list;
   try { localStorage.setItem('ffm-data-v1:custShared', JSON.stringify(list)); } catch(e) {}
   if (window.FFM_DATA) window.FFM_DATA.applyCust();
-  logEvent({ event:'Thêm mã KH', acct:acctKey, code, store: store.trim() });
+  const known = (ACCOUNTS[acctKey] ? ACCOUNTS[acctKey].customers : []).some(c => c.code === code && !c.team);
+  logEvent({ event: known ? 'Ghi nhớ tên cửa hàng' : 'Thêm mã KH mới', acct:acctKey, code, store: store.trim() });
   dataNote(); acctNote();
 }
 $('cuBtn').addEventListener('click', () => {
@@ -326,12 +327,26 @@ function card(r, idx){
     if (r.demo) s.disabled = true;
     s.addEventListener('change', () => {
       const k = r.acctKey || sel.value;
-      if (s.value && r.store && k !== 'AEON' && who.value.trim()) {
+      // không tự lưu nữa: hiện nút "Ghi nhớ" để người làm xác nhận (tránh chọn nhầm thành gán sai cho cả team)
+      r.rememberOffer = null;
+      if (s.value && r.store && k !== 'AEON') {
         const m = window.FFM.matchCustomer(acct.customers, r.store, acct.brand);
-        if (!m.hit || m.hit.code !== s.value) { saveCust(k, s.value, r.store); toast(`Đã tự lưu: "${r.store}" → ${s.value}. Lần sau gặp tên này sẽ tự chọn.`, 'ok'); }
+        if (!m.hit || m.hit.code !== s.value) r.rememberOffer = { acct: k, code: s.value, store: r.store };
       }
-      r.customer = s.value; const c = acct.customers.find(x => x.code === s.value && !x.team) || acct.customers.find(x => x.code === s.value); if (c && acct.makeAbbr && (!r.abbr || (acct.abbr && acct.abbr[c.code]))) r.abbr = acct.makeAbbr(c.name, c.code).abbr; recompute(false); render(); });
-    return el('div', {}, el('label', {class:'k', for:id, text:'Mã khách hàng (C10)'}), s);
+      r.customer = s.value; const c = acct.customers.find(x => x.code === s.value && !x.team) || acct.customers.find(x => x.code === s.value); if (c && acct.makeAbbr && (!r.abbr || r.source === 'image' || (acct.abbr && acct.abbr[c.code]))) r.abbr = acct.makeAbbr(c.name, c.code).abbr; recompute(false); render(); });
+    let mem = null;
+    const o = r.rememberOffer;
+    if (o && o.code === s.value) {
+      const nm = (acct.customers.find(x => x.code === o.code && !x.team) || {}).name || '';
+      mem = el('button', {class:'small', type:'button', text:`Ghi nhớ: "${o.store}" là ${o.code}${nm ? ' · ' + nm : ''}`});
+      mem.title = 'Lần sau gặp đúng tên này, web tự chọn mã này cho cả team';
+      mem.addEventListener('click', () => {
+        if (!who.value.trim()) { toast('Nhập tên người làm trước.', 'err'); who.focus(); return; }
+        saveCust(o.acct, o.code, o.store); r.rememberOffer = null; render();
+        toast(`Đã ghi nhớ "${o.store}" → ${o.code} cho cả team.`, 'ok');
+      });
+    }
+    return el('div', {}, el('label', {class:'k', for:id, text:'Mã khách hàng (C10)'}), s, mem);
   };
   const field = (label, key, type) => {
     const id = `f-${idx}-${key}`;

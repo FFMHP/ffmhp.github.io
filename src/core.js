@@ -157,9 +157,15 @@
         if (res.error) return { error: res.error };
         const issues = [];
         const fnStore = norm(f.name).replace(/\.[a-z]+$/i, '').replace(/^\s*20\d\d[.\-_]\d{1,2}[.\-_]\d{1,2}\s*-?\s*/, '').replace(/^((anh|ảnh)( dán| dan)?|image|screenshot|img)[\s_-]*\d*$/i, '').trim();
-        const m = fnStore ? matchCustomer(this.customers, fnStore, this.brand) : { hit: null };
+        // tên file hay có chữ thừa: "po kmart MONACHY ĐN" -> "kmart MONACHY Đà Nẵng"
+        const clean = fnStore.replace(/^\s*((p\.?o|đơn hàng|don hang|đơn|don|dh|order)\b[\s_.-]*)+/i, '')
+          .replace(/(^|[\s_-])(đn|dn)$/i, '$1Đà Nẵng').replace(/(^|[\s_-])(hn)$/i, '$1Hà Nội').replace(/(^|[\s_-])(hcm|sg)$/i, '$1Hồ Chí Minh').replace(/(^|[\s_-])(bn)$/i, '$1Bắc Ninh').trim();
+        let m = clean ? matchCustomer(this.customers, clean, this.brand) : { hit: null };
+        if (!m.hit && fnStore && clean !== fnStore) m = matchCustomer(this.customers, fnStore, this.brand);
         const customer = m.hit ? m.hit.code : '';
-        const abbr = m.hit ? (this.makeAbbr(fnStore).abbr || this.makeAbbr(m.hit.name).abbr) : '';
+        // viết tắt lấy theo tên cửa hàng trong DMKH (tên file hay viết tắt / sai chính tả)
+        const dm = m.hit ? (this.customers.find(c => c.code === m.hit.code && !c.team) || m.hit) : null;
+        const abbr = dm ? this.makeAbbr(dm.name).abbr : '';
         if (!m.hit) issues.push({ key: 'customer', level: 'err', msg: fnStore ? `Không dò được cửa hàng "${fnStore}" (tên file) trong DMKH. Chọn cửa hàng ở ô Mã khách hàng.` : 'Ảnh không có tên cửa hàng. Chọn cửa hàng ở ô Mã khách hàng (hoặc đặt tên file ảnh theo tên cửa hàng).' });
         else if (!m.exact) issues.push({ level: 'warn', msg: `Khớp gần đúng theo tên file: "${fnStore}" → ${m.hit.code} · ${m.hit.name}. Kiểm tra lại.` });
         const lines = res.rows.map((x, i) => {
