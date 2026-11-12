@@ -40,3 +40,7 @@ Mã được lưu vào sheet **`Code AEON`** trong Google Sheet "FFM Chuyển Đ
 - Ở ô **Mã khách hàng (C10)** của một đơn, chọn tay cửa hàng khác với web dò ra thì hiện nút **"Ghi nhớ: ... là ..."**; bấm nút mới lưu (tên cửa hàng trên đơn → mã KH). Lần sau gặp đúng tên đó web tự chọn.
 - Hoặc mở **"+ Thêm mã khách hàng"** dưới ô Account, nhập Mã KH + tên cửa hàng như ghi trên đơn (AEON: tên bắt đầu bằng mã cửa hàng, vd "1006 - AEON Hải Phòng").
 - Lưu ở sheet **`Mã KH`** trong Google Sheet "FFM Chuyển Đơn - Thống kê". Sửa / xoá dòng sai ngay trong sheet.
+
+## Chat team
+
+Nút **💬 Chat team** góc phải dưới. Tin nhắn lưu ở sheet **`Chat`** trong Google Sheet "FFM Chuyển Đơn - Thống kê" (giữ 100 tin gần nhất trên web). Web hỏi tin mới 15 giây/lần khi mở khung chat, 60 giây/lần khi đóng. Ai có link đều đọc được: không nhắn thông tin nhạy cảm.

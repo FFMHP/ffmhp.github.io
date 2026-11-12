@@ -85,6 +85,25 @@ select.cell{font-family:var(--f-body);min-width:16ch}
 .note{font-size:.85rem;color:var(--muted)}
 .list{display:grid;gap:16px}
 @media (prefers-reduced-motion:no-preference){button{transition:filter .15s}button:not(:disabled):hover{filter:brightness(1.06)}}
+
+.chat-btn{position:fixed;right:16px;bottom:16px;z-index:50;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:10px 16px;font:600 14px var(--f-body);box-shadow:0 4px 16px rgba(0,0,0,.15);cursor:pointer}
+.chat-badge[hidden]{display:none}
+.chat-badge{display:inline-block;min-width:18px;margin-left:4px;padding:0 5px;border-radius:9px;background:var(--accent);color:var(--accent-fg);font-size:12px;line-height:18px;text-align:center}
+.chat-box{position:fixed;right:16px;bottom:68px;z-index:50;width:min(360px,calc(100vw - 32px));height:min(480px,calc(100vh - 100px));display:flex;flex-direction:column;background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.2);overflow:hidden}
+.chat-box[hidden]{display:none}
+.chat-h{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
+.chat-x{border:0;background:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1}
+.chat-list{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.chat-empty{color:var(--muted);font-size:13px;margin:auto 0;text-align:center}
+.chat-msg{max-width:85%;align-self:flex-start}
+.chat-msg.mine{align-self:flex-end;text-align:right}
+.chat-meta{font-size:11px;color:var(--muted);margin-bottom:2px}
+.chat-text{display:inline-block;text-align:left;white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:14px}
+.chat-msg.mine .chat-text{background:var(--accent-soft)}
+.chat-state{margin:0;padding:0 12px;font-size:12px;color:var(--err);min-height:0}
+.chat-f{display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--line)}
+.chat-f textarea{flex:1;resize:none;font:14px var(--f-body);padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+.chat-note{margin:0;padding:0 12px 8px;font-size:11px;color:var(--muted)}
 </style>
 <div class="wrap">
   <header>
@@ -93,7 +112,7 @@ select.cell{font-family:var(--f-body);min-width:16ch}
       <p class="sub">Đổi đơn đặt hàng của khách sang form FORM_2_HP để up lên hệ thống. Xử lý ngay trên trình duyệt, file không gửi đi đâu.</p>
       <p class="note" id="dataNote" style="margin:6px 0 0"></p>
     </div>
-    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v30</span>
+    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v31</span>
   </header>
 
   <section class="panel controls" aria-label="Chọn file">
@@ -156,6 +175,15 @@ select.cell{font-family:var(--f-body);min-width:16ch}
 
   <div class="list" id="results"></div>
 </div>
+
+  <button type="button" id="chatBtn" class="chat-btn" aria-expanded="false" aria-controls="chatBox">💬 Chat team <span id="chatBadge" class="chat-badge" hidden>0</span></button>
+  <section id="chatBox" class="chat-box" hidden aria-label="Chat team">
+    <header class="chat-h"><b>Chat team FFM</b><button type="button" id="chatClose" class="chat-x" aria-label="Đóng">×</button></header>
+    <div id="chatList" class="chat-list"></div>
+    <p id="chatState" class="chat-state"></p>
+    <div class="chat-f"><textarea id="chatIn" rows="2" maxlength="1000" placeholder="Nhắn cho team… (Enter để gửi)"></textarea><button type="button" id="chatSend" class="primary">Gửi</button></div>
+    <p class="chat-note">Ai có link web đều đọc được, không nhắn thông tin nhạy cảm.</p>
+  </section>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
@@ -1717,5 +1745,72 @@ function toast(msg, kind){ const t=$('toast'); t.textContent=msg; t.className='t
 const DEMO = { demo:true, fileName:'2026.11.11 - Emeral BK - KKTCEMERAL261110-01.xlsx', po:'KKTCEMERAL261110-01', abbr:'EMERAL', customer:'KKTC0041', store:'Kmart The Emerald', delivery:'2026-11-14', orderDate:'2026-11-11', issues:[],
   lines:[{row:54,barcode:'8001200045053',name:'Mì Ý Spaghettini Agnesi 500g',qty:6,flags:[]},{row:55,barcode:'8001200045091',name:'Mì Ý Linguine Agnesi 500g',qty:12,flags:[]},{row:58,barcode:'8001200023808',name:'Nui Xoắn Rau Củ 3 Màu Eliche Tricolori Agnesi 500g',qty:3,flags:[]}] };
 render();
+})();
+</script><script>
+/* Khung chat team: tin nhắn lưu ở sheet "Chat" (Google Sheet thống kê). Hỏi tin mới 15 giây/lần khi mở khung, 60 giây/lần khi đóng. */
+(function () {
+  const $ = id => document.getElementById(id);
+  const API = window.FFM_API || '';
+  if (!/^https:/.test(API)) { const b = $('chatBtn'); if (b) b.hidden = true; return; }
+  const box = $('chatBox'), list = $('chatList'), inp = $('chatIn'), btn = $('chatBtn'), badge = $('chatBadge');
+  let msgs = [], last = 0, open = false, timer = null, busy = false;
+  const LS = 'ffm-chat-seen';
+  let seen = 0; try { seen = +localStorage.getItem(LS) || 0; } catch (e) {}
+  const me = () => ($('who').value || '').trim();
+  const fmt = t => { const d = new Date(t), p = n => String(n).padStart(2, '0'); const today = new Date().toDateString() === d.toDateString(); return (today ? '' : `${p(d.getDate())}/${p(d.getMonth() + 1)} `) + `${p(d.getHours())}:${p(d.getMinutes())}`; };
+  function draw() {
+    const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+    list.innerHTML = '';
+    if (!msgs.length) { const e = document.createElement('p'); e.className = 'chat-empty'; e.textContent = 'Chưa có tin nhắn. Hỏi gì team cứ nhắn ở đây.'; list.append(e); }
+    msgs.forEach(m => {
+      const row = document.createElement('div'); row.className = 'chat-msg' + (m.u === me() ? ' mine' : '');
+      const h = document.createElement('div'); h.className = 'chat-meta'; h.textContent = `${m.u || '?'} · ${fmt(m.t)}`;
+      const b = document.createElement('div'); b.className = 'chat-text'; b.textContent = m.m;
+      row.append(h, b); list.append(row);
+    });
+    if (atBottom || open) list.scrollTop = list.scrollHeight;
+    const unread = msgs.filter(m => m.t > seen && m.u !== me()).length;
+    badge.textContent = unread > 9 ? '9+' : String(unread); badge.hidden = open || !unread;
+  }
+  async function poll() {
+    if (busy || document.hidden) return;
+    busy = true;
+    try {
+      const r = await fetch(API + '?t=chat&since=' + last, { cache: 'no-store' });
+      const j = await r.json();
+      if (j && j.msgs && j.msgs.length) {
+        const keys = new Set(msgs.map(m => m.t + m.u + m.m));
+        j.msgs.forEach(m => { if (!keys.has(m.t + m.u + m.m)) msgs.push(m); });
+        msgs.sort((a, b) => a.t - b.t); msgs = msgs.slice(-100);
+        last = msgs[msgs.length - 1].t; draw();
+      }
+      $('chatState').textContent = '';
+    } catch (e) { $('chatState').textContent = 'Mất kết nối, đang thử lại…'; }
+    finally { busy = false; }
+  }
+  function schedule() { clearInterval(timer); timer = setInterval(poll, open ? 15000 : 60000); }
+  function markSeen() { if (msgs.length) { seen = msgs[msgs.length - 1].t; try { localStorage.setItem(LS, String(seen)); } catch (e) {} } draw(); }
+  btn.addEventListener('click', () => {
+    open = !open; box.hidden = !open; btn.setAttribute('aria-expanded', String(open));
+    if (open) { poll().then(markSeen); inp.focus(); } schedule();
+  });
+  $('chatClose').addEventListener('click', () => btn.click());
+  async function send() {
+    const text = inp.value.trim(); if (!text) return;
+    if (!me()) { $('chatState').textContent = 'Nhập tên ở ô "Người làm" trước khi nhắn.'; $('who').focus(); return; }
+    inp.value = ''; inp.disabled = true;
+    const local = { t: Date.now(), u: me(), m: text, pending: true };
+    msgs.push(local); draw(); list.scrollTop = list.scrollHeight;
+    try {
+      await fetch(API, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ event: 'chat', user: me(), msg: text }) });
+      msgs = msgs.filter(m => m !== local); // lấy lại bản có giờ chuẩn từ máy chủ
+      await new Promise(r => setTimeout(r, 800)); await poll(); markSeen();
+    } catch (e) { $('chatState').textContent = 'Chưa gửi được, kiểm tra mạng rồi gửi lại.'; inp.value = text; msgs = msgs.filter(m => m !== local); draw(); }
+    finally { inp.disabled = false; inp.focus(); }
+  }
+  $('chatSend').addEventListener('click', send);
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+  poll(); schedule();
 })();
 </script>

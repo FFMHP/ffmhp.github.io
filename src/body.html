@@ -5,7 +5,7 @@
       <p class="sub">Đổi đơn đặt hàng của khách sang form FORM_2_HP để up lên hệ thống. Xử lý ngay trên trình duyệt, file không gửi đi đâu.</p>
       <p class="note" id="dataNote" style="margin:6px 0 0"></p>
     </div>
-    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v30</span>
+    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v31</span>
   </header>
 
   <section class="panel controls" aria-label="Chọn file">
@@ -68,3 +68,12 @@
 
   <div class="list" id="results"></div>
 </div>
+
+  <button type="button" id="chatBtn" class="chat-btn" aria-expanded="false" aria-controls="chatBox">💬 Chat team <span id="chatBadge" class="chat-badge" hidden>0</span></button>
+  <section id="chatBox" class="chat-box" hidden aria-label="Chat team">
+    <header class="chat-h"><b>Chat team FFM</b><button type="button" id="chatClose" class="chat-x" aria-label="Đóng">×</button></header>
+    <div id="chatList" class="chat-list"></div>
+    <p id="chatState" class="chat-state"></p>
+    <div class="chat-f"><textarea id="chatIn" rows="2" maxlength="1000" placeholder="Nhắn cho team… (Enter để gửi)"></textarea><button type="button" id="chatSend" class="primary">Gửi</button></div>
+    <p class="chat-note">Ai có link web đều đọc được, không nhắn thông tin nhạy cảm.</p>
+  </section>
