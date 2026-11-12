@@ -23,23 +23,65 @@
     const key = (location.hash.replace(/^#\/?/, '').split(/[/?]/)[0] || '').toLowerCase();
     const R = ROUTES[key] || ROUTES[''];
     Object.values(ROUTES).forEach(x => { $(x.page).hidden = x.page !== R.page; });
+    document.querySelectorAll('.nav a').forEach(a => { const on = a.dataset.route === (ROUTES[key] ? key : ''); a.classList.toggle('on', on); if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+    if (R.page === 'pageHome') loadStats();
     document.title = R.doc;
     window.scrollTo(0, 0);
     setRoom(R.room, R.title);
   }
   window.addEventListener('hashchange', route);
 
-  // ---- tên người nhắn (dùng chung với ô "Người làm") ----
-  function syncWho() {
-    chatWho.value = me();
-    $('chatWhoBox').hidden = !!me();
-  }
-  chatWho.addEventListener('change', () => {
-    who.value = chatWho.value.trim();
+  // ---- tên người dùng: nút trên thanh đầu trang (dùng chung cho thống kê + chat) ----
+  const pop = $('userPop'), uIn = $('userIn');
+  function setName(v) {
+    who.value = (v || '').trim();
     try { localStorage.setItem('ffm-user', who.value); } catch (e) {}
     who.dispatchEvent(new Event('change'));
     syncWho(); draw();
-  });
+  }
+  function syncWho() {
+    chatWho.value = me();
+    $('chatWhoBox').hidden = !!me();
+    $('userName').textContent = me() || 'Nhập tên';
+    $('userAv').textContent = me() ? me().split(/\s+/).pop().charAt(0).toUpperCase() : '?';
+    $('userBtn').classList.toggle('need', !me());
+  }
+  function openPop(v) { pop.hidden = !v; $('userBtn').setAttribute('aria-expanded', String(v)); if (v) { uIn.value = me(); uIn.focus(); uIn.select(); } }
+  $('userBtn').addEventListener('click', () => openPop(pop.hidden));
+  $('userSave').addEventListener('click', () => { if (uIn.value.trim()) { setName(uIn.value); openPop(false); } else uIn.focus(); });
+  uIn.addEventListener('keydown', e => { if (e.key === 'Enter') $('userSave').click(); if (e.key === 'Escape') openPop(false); });
+  document.addEventListener('click', e => { if (!pop.hidden && !e.target.closest('.user')) openPop(false); });
+  window.FFM_askName = () => { setTimeout(() => openPop(true), 0); window.scrollTo(0, 0); };
+
+  // ---- góp ý: mở khung chat ----
+  $('fbBtn').addEventListener('click', () => { if (!open) btn.click(); if (!inp.value) inp.value = '[Góp ý] '; inp.focus(); });
+
+  // ---- trang chủ: số liệu hôm nay từ sheet Log ----
+  let statsAt = 0;
+  async function loadStats() {
+    if (!API || Date.now() - statsAt < 30000) return;
+    statsAt = Date.now();
+    try {
+      const j = await (await fetch(API + '?t=stats', { cache: 'no-store' })).json();
+      const t = j.today || {};
+      $('stOrders').textContent = (t.orders || 0).toLocaleString('vi-VN');
+      $('stDl').textContent = (t.downloads || 0).toLocaleString('vi-VN');
+      $('stErr').textContent = (t.err || 0).toLocaleString('vi-VN');
+      $('stUsers').textContent = (t.users || 0).toLocaleString('vi-VN');
+      $('statsNote').textContent = 'cập nhật ' + fmt(Date.now());
+      const ul = $('recent'); ul.innerHTML = '';
+      (j.recent || []).slice(0, 6).forEach(x => {
+        const li = document.createElement('li');
+        // không ghi tên người làm, chỉ ghi việc đã làm
+        const what = x.ev === 'Chuyển đổi' ? `Chuyển ${x.orders || 0} đơn ${x.acct || ''}` : /^Tải/.test(x.ev) ? `Tải ${x.orders || 0} file ${x.acct || ''}` : `${x.ev || ''} ${x.acct || ''}`;
+        const sp = document.createElement('span'); sp.textContent = what.trim();
+        const tm = document.createElement('time'); tm.textContent = fmt(x.t);
+        li.append(sp, tm); ul.append(li);
+      });
+      if (!ul.children.length) { const li = document.createElement('li'); li.className = 'note'; li.textContent = 'Chưa có hoạt động nào hôm nay.'; ul.append(li); }
+    } catch (e) { $('statsNote').textContent = 'chưa tải được số liệu'; }
+  }
+  chatWho.addEventListener('change', () => setName(chatWho.value));
   who.addEventListener('change', syncWho);
 
   // ---- chat ----

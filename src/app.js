@@ -14,7 +14,8 @@ const libs = {
 const $ = id => document.getElementById(id);
 // thống kê: gửi số liệu (không có nội dung đơn) về Google Sheet "FFM Chuyển Đơn - Thống kê"
 const LOG_URL = window.FFM_API || '';
-const state = { files: [], results: [], demo: true };
+const state = { files: [], results: [], demo: true, filter: 'all' };
+const askName = () => { if (window.FFM_askName) window.FFM_askName(); else who.focus(); };
 let dl = null;
 if (window.claude && window.claude.use) window.claude.use('downloads').then(d => { dl = d; }).catch(() => {});
 
@@ -61,7 +62,22 @@ function recompute(resetDelivery){
 }
 sel.addEventListener('change', () => { try{localStorage.setItem('ffm-acct', sel.value)}catch(e){}; acctNote(); });
 acctNote();
-const dataNote = () => { if (window.FFM_DATA) $('dataNote').textContent = 'Bảng dữ liệu · ' + window.FFM_DATA.summary(); };
+const dataNote = () => {
+  if (!window.FFM_DATA) return;
+  const sum = window.FFM_DATA.summary(), st = window.FFM_DATA.status;
+  $('dataNote').textContent = 'Bảng dữ liệu · ' + sum;
+  const keys = ['dmkh','dmsp','map','tpl'], loading = keys.some(k => !st[k]), err = keys.some(k => st[k] && st[k].err);
+  const local = keys.every(k => st[k] && st[k].src !== 'web');
+  $('dataDot').className = 'dot ' + (loading ? 'load' : err ? 'warn' : local ? 'warn' : 'ok');
+  $('dataChipTxt').textContent = loading ? 'Đang tải bảng dữ liệu…' : err ? 'Có bảng dữ liệu lỗi · xem chi tiết' : local ? 'Đang dùng bảng gắn sẵn' : 'Dữ liệu đã cập nhật';
+  $('dataChip').title = sum;
+};
+$('dataChip').addEventListener('click', () => { const n = $('dataNote'); n.hidden = !n.hidden; $('dataChip').setAttribute('aria-expanded', String(!n.hidden)); });
+function steps(){
+  const s2 = state.files.length > 0, s3 = !state.demo && state.results.length > 0;
+  [['st1', true], ['st2', s2], ['st3', s3]].forEach(([id, done]) => { const e = $(id); e.classList.toggle('done', done); e.querySelector('i').textContent = done ? '✓' : id.slice(2); });
+}
+function progress(frac){ const p = $('prog'); if (frac == null) { p.hidden = true; return; } p.hidden = false; p.classList.toggle('indet', frac < 0); $('progBar').style.width = frac < 0 ? '' : Math.round(Math.max(0.04, frac) * 100) + '%'; }
 dataNote();
 if (window.FFM_DATA) window.FFM_DATA.ready.then(() => {
   if (window.FFM_DATA.status.map && window.FFM_DATA.status.map.src === 'web') { delete window.FFM_AEON_MAP_USER; mapInfo = 'bảng chung trên web'; $('mapBtn').hidden = true; }
@@ -91,6 +107,7 @@ async function addFiles(fl){
   $('fileList').innerHTML = '';
   state.files.forEach(f => { const s = document.createElement('span'); s.className='chip'; s.textContent=f.name; s.title=f.name; $('fileList').appendChild(s); });
   $('btnGo').disabled = !state.files.length;
+  steps();
 }
 
 // dán ảnh chụp màn hình (Ctrl+V) thẳng vào trang
@@ -116,15 +133,17 @@ function logEvent(d){
 }
 
 $('btnGo').addEventListener('click', async () => {
-  if (!who.value.trim()) { toast('Nhập tên người làm trước khi chuyển đổi (chỉ nhập 1 lần).', 'err'); who.focus(); return; }
+  if (!who.value.trim()) { toast('Nhập tên người làm trước khi chuyển đổi (chỉ nhập 1 lần).', 'err'); askName(); return; }
   if (window.FFM_DATA) { const t = setTimeout(() => toast('Đang tải bảng DMKH/DMSP mới nhất…'), 300); await window.FFM_DATA.ready; clearTimeout(t); }
   const acct = ACCOUNTS[sel.value], key = sel.value;
   state.demo = false;
   const files = state.files.slice().sort((x,y) => x.name < y.name ? -1 : x.name > y.name ? 1 : 0);
   $('btnGo').disabled = true;
   const out = [];
+  progress(files.length > 1 ? 0 : -1);
   for (let i = 0; i < files.length; i++) {
     const f = files[i];
+    if (files.length > 1) progress(i / files.length);
     try {
       let r;
       if (acct.async) r = await acct.parseFile(f, m => toast(`File ${i+1}/${files.length}: ${m}`), libs);
@@ -132,7 +151,8 @@ $('btnGo').addEventListener('click', async () => {
       (r.multi || [r]).forEach(x => { if (!x.error) x.acctKey = key; out.push(Object.assign({ fileName: x.sheet ? `${f.name} · sheet ${x.sheet}` : f.name }, x)); });
     } catch (e) { out.push({ fileName: f.name, error: 'Không đọc được file: ' + (e && e.message || e) }); }
   }
-  state.results = out;
+  state.results = out; state.filter = 'all';
+  progress(1); setTimeout(() => progress(null), 600);
   $('btnGo').disabled = false;
   recompute(true);
   render();
@@ -170,12 +190,22 @@ function el(tag, attrs, ...kids){ const e=document.createElement(tag); for (cons
 function render(){
   const box = $('results'); box.innerHTML='';
   const rs = state.demo ? [DEMO] : state.results;
-  rs.forEach((r,idx) => box.appendChild(card(r, idx)));
+  const sts = rs.map(r => state.demo ? 'demo' : status(r));
+  rs.forEach((r,idx) => { if (state.demo || state.filter === 'all' || sts[idx] === state.filter) box.appendChild(card(r, idx)); });
+  steps();
   if (!state.demo) {
-    const n = rs.length, ok = rs.filter(r => status(r)!=='err').length;
+    const n = rs.length, ok = sts.filter(x => x !== 'err').length;
     const lines = rs.reduce((s,r)=>s+(r.lines?r.lines.length:0),0), qty = rs.reduce((s,r)=>s+(r.lines?r.lines.reduce((a,l)=>a+(+l.qty||0),0):0),0);
-    $('summary').textContent = `${n} đơn · ${lines} dòng hàng · tổng ${qty.toLocaleString('vi-VN')} SL · ${ok}/${n} đơn tải được`;
+    const cnt = k => sts.filter(x => x === k).length;
+    const sm = $('summary'); sm.innerHTML = '';
+    const chip = (k, label, num) => { const b = el('button', {type:'button', class:'fchip ' + k + (state.filter === k ? ' on' : ''), text:`${label} ${num}`}); b.setAttribute('aria-pressed', String(state.filter === k)); b.addEventListener('click', () => { state.filter = state.filter === k && k !== 'all' ? 'all' : k; render(); }); return b; };
+    sm.append(chip('all', 'Tất cả', n));
+    if (cnt('ok')) sm.append(chip('ok', 'Sẵn sàng', cnt('ok')));
+    if (cnt('warn')) sm.append(chip('warn', 'Cần xem', cnt('warn')));
+    if (cnt('err')) sm.append(chip('err', 'Cần sửa', cnt('err')));
+    sm.append(el('span', {class:'sumtxt', text:`${lines} dòng · tổng ${qty.toLocaleString('vi-VN')} SL`}));
     $('btnAll').hidden = n < 2; $('btnAll').disabled = ok === 0;
+    $('btnAll').textContent = `Tải tất cả (${ok} file .zip)`;
   }
 }
 
@@ -238,7 +268,7 @@ $('cuBtn').addEventListener('click', () => {
   $('cuCode').value = ''; $('cuName').value = '';
 });
 function saveAeonCode(l){
-  if (!who.value.trim()) { toast('Nhập tên người làm trước.', 'err'); who.focus(); return; }
+  if (!who.value.trim()) { toast('Nhập tên người làm trước.', 'err'); askName(); return; }
   const bc = l.barcode, pc = l.productCode;
   window.FFM_AEON_MAP_SHARED = Object.assign({}, window.FFM_AEON_MAP_SHARED || {}, { [bc]: pc });
   try { localStorage.setItem('ffm-data-v1:aeonShared', JSON.stringify(window.FFM_AEON_MAP_SHARED)); } catch(e) {}
@@ -340,7 +370,7 @@ function card(r, idx){
       mem = el('button', {class:'small', type:'button', text:`Ghi nhớ: "${o.store}" là ${o.code}${nm ? ' · ' + nm : ''}`});
       mem.title = 'Lần sau gặp đúng tên này, web tự chọn mã này cho cả team';
       mem.addEventListener('click', () => {
-        if (!who.value.trim()) { toast('Nhập tên người làm trước.', 'err'); who.focus(); return; }
+        if (!who.value.trim()) { toast('Nhập tên người làm trước.', 'err'); askName(); return; }
         saveCust(o.acct, o.code, o.store); r.rememberOffer = null; render();
         toast(`Đã ghi nhớ "${o.store}" → ${o.code} cho cả team.`, 'ok');
       });
