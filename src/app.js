@@ -52,7 +52,7 @@ $('mapIn').addEventListener('change', async () => {
     toast(`Đã nạp ${Object.keys(map).length} mã từ ${f.name}`, 'ok');
   } catch (e) { toast('Không đọc được bảng Code chuyển đổi: ' + e.message, 'err'); }
 });
-$('ngayVe').value = toISO(addDays(new Date(), -1));
+$('ngayVe').value = toISO(new Date()); // mặc định hôm nay (anh Tài chốt 12/11)
 $('ngayVe').addEventListener('change', () => { if (!state.demo) { recompute(true); render(); } });
 function recompute(resetDelivery){
   const acct = ACCOUNTS[sel.value], nv = $('ngayVe').value;

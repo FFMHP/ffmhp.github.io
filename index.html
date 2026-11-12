@@ -164,7 +164,7 @@ select.cell{font-family:var(--f-body);min-width:16ch}
       <p class="sub">Đổi đơn đặt hàng của khách sang form FORM_2_HP để up lên hệ thống. Xử lý ngay trên trình duyệt, file không gửi đi đâu.</p>
       <p class="note" id="dataNote" style="margin:6px 0 0"></p>
     </div>
-    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v32</span>
+    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v33</span>
   </header>
 
   <section class="panel controls" aria-label="Chọn file">
@@ -1443,7 +1443,7 @@ $('mapIn').addEventListener('change', async () => {
     toast(`Đã nạp ${Object.keys(map).length} mã từ ${f.name}`, 'ok');
   } catch (e) { toast('Không đọc được bảng Code chuyển đổi: ' + e.message, 'err'); }
 });
-$('ngayVe').value = toISO(addDays(new Date(), -1));
+$('ngayVe').value = toISO(new Date()); // mặc định hôm nay (anh Tài chốt 12/11)
 $('ngayVe').addEventListener('change', () => { if (!state.demo) { recompute(true); render(); } });
 function recompute(resetDelivery){
   const acct = ACCOUNTS[sel.value], nv = $('ngayVe').value;
