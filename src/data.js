@@ -7,6 +7,9 @@
   const PREFIX = { KKTC: 'KKTC', MOR: 'MORGT', BRG: 'BRGMART', AEON: 'AEON' };
   const LABEL = { dmkh: 'DMKH', dmsp: 'DMSP', map: 'Code chuyển đổi', tpl: 'Form final' };
   const CACHE = 'ffm-data-v1:';
+  // Google Apps Script: thống kê + bảng "Code AEON" team tự thêm
+  const API = root.FFM_LOG_URL || 'https://script.google.com/macros/s/AKfycbxLBieSz9Cp00--Eade0ZZOoDQxs_2QduXNVWVec236x7ny-YgnR-6curOzhY79ZNnovQ/exec';
+  root.FFM_API = API;
   const status = {}; // key -> {src:'web'|'gắn sẵn', at}
   const url = n => BASE + encodeURIComponent(n);
   const norm = s => String(s == null ? '' : s).normalize('NFC').trim();
@@ -92,15 +95,29 @@
     apply(key, val); status[key] = { src: 'web', at: st.mod, fresh: true };
   }
 
+  async function loadShared() {
+    if (!/^https:/.test(API)) return;
+    const c = lget('aeonShared'); if (c) root.FFM_AEON_MAP_SHARED = c;
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 8000);
+    try {
+      const r = await fetch(API + '?t=aeonmap', { signal: ctl.signal });
+      const j = await r.json();
+      if (j && j.map) { root.FFM_AEON_MAP_SHARED = j.map; lset('aeonShared', j.map); status.shared = { n: Object.keys(j.map).length }; }
+    } catch (e) { status.shared = { err: true, n: Object.keys(root.FFM_AEON_MAP_SHARED || {}).length }; }
+    finally { clearTimeout(t); }
+  }
+
   function summary() {
     const fmt = s => { if (!s) return 'đang tải…'; if (s.err) return 'lỗi, dùng bảng gắn sẵn'; if (s.src !== 'web') return 'bảng gắn sẵn'; if (!s.at) return 'từ web'; const d = new Date(s.at), p = n => String(n).padStart(2, '0'); return `cập nhật ${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`; };
-    return Object.keys(FILES).map(k => `${LABEL[k]}: ${fmt(status[k])}`).join(' · ');
+    const sh = status.shared ? ` · Code AEON team thêm: ${status.shared.n} mã${status.shared.err ? ' (chưa tải mới được)' : ''}` : '';
+    return Object.keys(FILES).map(k => `${LABEL[k]}: ${fmt(status[k])}`).join(' · ') + sh;
   }
 
   root.FFM_DATA = {
     status, summary, parseDMKH, parseDMSP, parseMap,
+    loadShared,
     ready: (location.protocol === 'file:' ? Promise.resolve() : Promise.all(Object.keys(FILES).map(k =>
       loadOne(k).catch(e => { console.warn('[FFM data]', k, e); status[k] = { src: 'gắn sẵn', err: String(e.message || e) }; })
-    ))).then(() => { if (location.protocol === 'file:') Object.keys(FILES).forEach(k => status[k] = { src: 'gắn sẵn' }); })
+    ).concat([loadShared()]))).then(() => { if (location.protocol === 'file:') Object.keys(FILES).forEach(k => status[k] = { src: 'gắn sẵn' }); })
   };
 })(window);

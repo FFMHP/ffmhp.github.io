@@ -13,7 +13,7 @@ const libs = {
 };
 const $ = id => document.getElementById(id);
 // thống kê: gửi số liệu (không có nội dung đơn) về Google Sheet "FFM Chuyển Đơn - Thống kê"
-const LOG_URL = window.FFM_LOG_URL || 'https://script.google.com/macros/s/AKfycbxLBieSz9Cp00--Eade0ZZOoDQxs_2QduXNVWVec236x7ny-YgnR-6curOzhY79ZNnovQ/exec';
+const LOG_URL = window.FFM_API || '';
 const state = { files: [], results: [], demo: true };
 let dl = null;
 if (window.claude && window.claude.use) window.claude.use('downloads').then(d => { dl = d; }).catch(() => {});
@@ -176,6 +176,18 @@ function editCell(r, l, key){
 
 const flagEls = l => l.flags.map(x => el('span',{class:'flag'+(x.level==='info'?' info':''),text:(x.level==='info'?'ⓘ ':'⚠ ')+x.msg}));
 // AEON: barcode trên đơn -> product code (cột D)
+function saveAeonCode(l){
+  if (!who.value.trim()) { toast('Nhập tên người làm trước.', 'err'); who.focus(); return; }
+  const bc = l.barcode, pc = l.productCode;
+  window.FFM_AEON_MAP_SHARED = Object.assign({}, window.FFM_AEON_MAP_SHARED || {}, { [bc]: pc });
+  try { localStorage.setItem('ffm-data-v1:aeonShared', JSON.stringify(window.FFM_AEON_MAP_SHARED)); } catch(e) {}
+  logEvent({ event:'Thêm code AEON', acct:'AEON', barcode:bc, code:pc, aeonName:l.aeonName || '' });
+  // áp luôn cho các dòng cùng barcode đang mở
+  state.results.forEach(r => { if (r.aeon) r.lines.forEach(x => { if (x.barcode === bc) { x.productCode = pc; x.pcState = 'map'; validateAeon(x); } }); });
+  if (window.FFM_DATA && window.FFM_DATA.status.shared) window.FFM_DATA.status.shared.n = Object.keys(window.FFM_AEON_MAP_SHARED).length;
+  dataNote(); render();
+  toast(`Đã lưu ${bc} → ${pc} vào bảng chung. Cả team dùng được từ lần mở web tiếp theo.`, 'ok');
+}
 function aeonTable(r){
   const tb = el('tbody');
   r.lines.forEach((l, i) => {
@@ -193,11 +205,22 @@ function aeonTable(r){
       pcCtl.addEventListener('change', () => { l.productCode = pcCtl.value.trim().toUpperCase(); l.pcState = 'manual'; validateAeon(l); render(); });
       pcCtl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); pcCtl.blur(); } });
     }
-    const src = { map:'theo bảng Code chuyển đổi', dmsp:'theo DMSP', multi:'mã gốc trong DMSP', chosen:'chọn tay', manual:'nhập tay', pick:'', none:'' }[l.pcState] || '';
+    const shared = window.FFM_AEON_MAP_SHARED || {};
+    const official = window.FFM_AEON_MAP || {};
+    const canSave = ['chosen','manual'].includes(l.pcState) && l.productCode && l.barcode && !official[l.barcode] && shared[l.barcode] !== l.productCode;
+    const inDmsp = l.productCode && window.FFM_PC && Object.values(window.FFM_PC).some(a => a.some(x => x[0] === l.productCode));
+    let saveBtn = null;
+    if (canSave) {
+      saveBtn = el('button', {class:'small', type:'button', text: inDmsp ? '+ Lưu vào bảng Code chuyển đổi chung' : 'Mã này không có trong DMSP, chưa lưu được'});
+      saveBtn.disabled = !inDmsp;
+      saveBtn.title = 'Lần sau cả team gặp barcode ' + l.barcode + ' sẽ tự điền ' + l.productCode;
+      saveBtn.addEventListener('click', () => saveAeonCode(l));
+    }
+    const src = { map: (shared[l.barcode] && !official[l.barcode] ? 'theo bảng Code chuyển đổi (team thêm)' : 'theo bảng Code chuyển đổi'), dmsp:'theo DMSP', multi:'mã gốc trong DMSP', chosen:'chọn tay', manual:'nhập tay', pick:'', none:'' }[l.pcState] || '';
     tb.append(el('tr', {class:lvl},
       el('td', {class:'num', text:String(i+1)}),
       el('td', {}, el('div', {class:'mono', text:l.barcode || '—'}), el('div', {class:'sub2', text:l.aeonName})),
-      el('td', {}, pcCtl, el('div', {class:'pname', text:(l.name || '') + (src ? ' · ' + src : '')}), flagEls(l)),
+      el('td', {}, pcCtl, el('div', {class:'pname', text:(l.name || '') + (src ? ' · ' + src : '')}), saveBtn, flagEls(l)),
       el('td', {class:'num', text: l.qty == null ? '?' : l.qty.toLocaleString('vi-VN')}),
       el('td', {class:'num', text: l.pack != null && l.cartons != null ? `${l.pack} × ${l.cartons}` : ''})));
   });

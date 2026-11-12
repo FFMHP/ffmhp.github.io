@@ -26,3 +26,11 @@ Nếu bảng lỗi (đổi tên cột…), trang tự dùng bảng gắn sẵn v
 ## Thống kê sử dụng
 
 Mỗi lần chuyển đổi / tải file, web ghi 1 dòng (người làm, account, số file, số đơn, đơn tải được / còn lỗi) vào Google Sheet **"FFM Chuyển Đơn - Thống kê"** trên Drive của anh Tài (sheet `Log`). Không gửi nội dung đơn hàng.
+
+## Code chuyển đổi AEON do team tự thêm
+
+Khi đơn AEON có barcode chưa có trong bảng, người làm chọn hoặc nhập product code rồi bấm **"+ Lưu vào bảng Code chuyển đổi chung"**.
+Mã được lưu vào sheet **`Code AEON`** trong Google Sheet "FFM Chuyển Đơn - Thống kê" (có tên người thêm và thời gian), cả team dùng được từ lần mở web sau.
+- Chỉ lưu được product code có trong DMSP.
+- File `data/Code chuyển đổi.xlsx` luôn được ưu tiên hơn bảng team thêm.
+- Muốn sửa hoặc xoá một mã team thêm sai: sửa hoặc xoá dòng đó trong sheet `Code AEON`.

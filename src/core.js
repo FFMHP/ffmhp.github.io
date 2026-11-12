@@ -273,7 +273,7 @@
   }
 
   // AEON: barcode trên đơn -> product code điền form (bảng Code chuyển đổi trước, DMSP sau)
-  function aeonMap() { return root.FFM_AEON_MAP_USER || root.FFM_AEON_MAP || {}; }
+  function aeonMap() { return Object.assign({}, root.FFM_AEON_MAP_SHARED || {}, root.FFM_AEON_MAP || {}, root.FFM_AEON_MAP_USER || {}); }
   function resolveAeon(l) {
     const map = aeonMap(), PC = root.FFM_PC || {};
     const key = String(l.barcode).padStart(14, '0');
