@@ -2,7 +2,7 @@
 
 Công cụ đổi đơn đặt hàng của khách (Kmart, Morgant, BRG/Fujimart, AEON) sang form **FORM_2_HP** của Hyperion.
 
-**Link cho team:** https://nguyencongtai2101.github.io/ffm-chuyen-don/
+**Link cho team:** https://ffmhp.github.io/
 
 ## Cập nhật bảng dữ liệu (không cần gửi file cho team)
 
