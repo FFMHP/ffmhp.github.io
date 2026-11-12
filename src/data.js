@@ -95,16 +95,25 @@
     apply(key, val); status[key] = { src: 'web', at: st.mod, fresh: true };
   }
 
+  // bảng Code AEON team thêm: không chặn quá 15 giây; tải xong muộn vẫn áp dụng
+  let sharedP = null;
+  function fetchShared() {
+    return sharedP || (sharedP = fetch(API + '?t=aeonmap', { cache: 'no-store' }).then(r => r.json()).then(j => {
+      if (!j || !j.map) throw new Error('bad');
+      root.FFM_AEON_MAP_SHARED = j.map; lset('aeonShared', j.map); status.shared = { n: Object.keys(j.map).length };
+      return true;
+    }).catch(e => { sharedP = null; throw e; }));
+  }
   async function loadShared() {
     if (!/^https:/.test(API)) return;
     const c = lget('aeonShared'); if (c) root.FFM_AEON_MAP_SHARED = c;
-    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 15000);
-    try {
-      const r = await fetch(API + '?t=aeonmap', { signal: ctl.signal });
-      const j = await r.json();
-      if (j && j.map) { root.FFM_AEON_MAP_SHARED = j.map; lset('aeonShared', j.map); status.shared = { n: Object.keys(j.map).length }; }
-    } catch (e) { status.shared = { err: true, n: Object.keys(root.FFM_AEON_MAP_SHARED || {}).length }; }
-    finally { clearTimeout(t); }
+    const n0 = Object.keys(root.FFM_AEON_MAP_SHARED || {}).length;
+    const timeout = new Promise(ok => setTimeout(() => ok('timeout'), 15000));
+    const r = await Promise.race([fetchShared().catch(() => 'err'), timeout]);
+    if (r !== true) {
+      status.shared = { err: true, n: n0 };
+      fetchShared().catch(() => fetchShared()).then(() => root.FFM_DATA && root.FFM_DATA.onShared && root.FFM_DATA.onShared()).catch(() => {});
+    }
   }
 
   function summary() {

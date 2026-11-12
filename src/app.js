@@ -67,6 +67,11 @@ if (window.FFM_DATA) window.FFM_DATA.ready.then(() => {
   if (window.FFM_DATA.status.map && window.FFM_DATA.status.map.src === 'web') { delete window.FFM_AEON_MAP_USER; mapInfo = 'bảng chung trên web'; $('mapBtn').hidden = true; }
   dataNote(); acctNote();
 });
+if (window.FFM_DATA) window.FFM_DATA.onShared = () => {
+  dataNote();
+  state.results.forEach(r => { if (r.aeon) r.lines.forEach(l => { if (!['chosen','manual'].includes(l.pcState)) resolveAeon(l); }); });
+  if (!state.demo) render();
+};
 
 // files
 const drop = $('drop'), fileIn = $('fileIn');
