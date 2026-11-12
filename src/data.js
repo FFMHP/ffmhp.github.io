@@ -98,7 +98,7 @@
   async function loadShared() {
     if (!/^https:/.test(API)) return;
     const c = lget('aeonShared'); if (c) root.FFM_AEON_MAP_SHARED = c;
-    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 8000);
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 15000);
     try {
       const r = await fetch(API + '?t=aeonmap', { signal: ctl.signal });
       const j = await r.json();
