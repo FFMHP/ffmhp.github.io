@@ -60,10 +60,11 @@
     const count = {};
     results.forEach(r => {
       if (r.error || r.fixedPo) return;
-      if (!r.abbr || !ngayVe) { r.po = ''; return; }
-      const k = r.prefix + r.abbr;
+      const d = r.poDate || ngayVe;
+      if ((!r.abbr && !r.noAbbr) || !d) { r.po = ''; return; }
+      const k = r.prefix + (r.abbr || '') + (r.poDate ? yymmdd(d) : '');
       count[k] = (count[k] || (startSeq && startSeq[k]) || 0) + 1;
-      const base = `${r.prefix}${r.abbr}${yymmdd(ngayVe)}`;
+      const base = `${r.prefix}${r.abbr || ''}${yymmdd(d)}`;
       // seq 'always': luôn có -01, -02 (Kmart) · 'dup': đơn đầu không đuôi, đơn thứ 2 trở đi -02, -03 (Morgant)
       r.po = r.seq === 'dup' ? (count[k] === 1 ? base : `${base}-${pad(count[k])}`) : `${base}-${pad(count[k])}`;
       r.poNote = '';
@@ -134,6 +135,68 @@
     lines.forEach(l => { if (l.barcode) { if (seen[l.barcode]) l.flags.push({ level: 'warn', msg: `Trùng barcode với dòng ${seen[l.barcode]}` }); else seen[l.barcode] = l.row; } });
     if (!lines.length) issues.push({ level: 'err', msg: 'Không có dòng nào có số lượng đặt hàng.' });
     return { prefix: acct.prefix, seq: acct.seq, abbr: ab.abbr, customer, store, lines, issues };
+  }
+
+  /* ---------- Sói Biển: đơn Excel có sẵn Product code ----------
+     Tiêu đề trên cùng: "ĐƠN HÀNG KHO TỔNG 2 ĐẶT NGÀY 12/11" · cột Barcode | Product code | Sản phẩm | ĐVT | TỔNG KHO ĐẶT | Giá
+     Product code điền cột D, SL cột F, kho -> mã KH theo DMKH ("KHO 2" -> SOIBIEN074). */
+  function parseSoiBien(acct, wb, fileName) {
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const range = XLSXlib.utils.decode_range(ws['!ref'] || 'A1:A1');
+    const issues = [];
+    let hr = -1, cBc = -1, cPc = -1, cName = -1, cQty = -1, title = '';
+    for (let r = range.s.r; r <= Math.min(range.e.r, range.s.r + 20) && hr < 0; r++) {
+      const H = []; for (let c = range.s.c; c <= Math.min(range.e.c, 30); c++) H[c] = fold(cellText(ws, r, c)).trim();
+      const pc = H.findIndex(h => h && /product\s*code|ma\s*(sp|san pham|hang hyperion)/.test(h));
+      if (pc >= 0) {
+        hr = r; cPc = pc;
+        cBc = H.findIndex(h => h && /barcode|ma vach/.test(h));
+        cName = H.findIndex(h => h && /san pham|ten/.test(h));
+        cQty = H.findIndex((h, i) => h && i !== cPc && /dat|so luong|\bsl\b/.test(h) && !/gia|tien/.test(h));
+      } else { for (let c = range.s.c; c <= Math.min(range.e.c, 30); c++) { const t = cellText(ws, r, c); if (t && t.length > title.length) title = t; } }
+    }
+    if (hr < 0) return { error: 'Không tìm thấy cột "Product code" ở dòng tiêu đề. File này có đúng mẫu đơn Sói Biển không?' };
+    if (cQty < 0) return { error: 'Không tìm thấy cột số lượng đặt (vd "TỔNG KHO ĐẶT").' };
+    const src = title + ' ' + fileName;
+    // ngày đặt: "ĐẶT NGÀY 12/11" trong tiêu đề, không có thì lấy "ĐẶT 12.11" trong tên file
+    let orderDate = '';
+    const md = fold(title).match(/ngay\s*(\d{1,2})\s*[\/.\-]\s*(\d{1,2})(?:\s*[\/.\-]\s*(\d{2,4}))?/) || fold(fileName).match(/dat\s*(?:ngay\s*)?(\d{1,2})\s*[\/.\-]\s*(\d{1,2})(?:\s*[\/.\-]\s*(\d{2,4}))?/);
+    if (md) {
+      const now = new Date(); let y = md[3] ? +md[3] : now.getFullYear(); if (y < 100) y += 2000;
+      if (!md[3] && +md[2] > now.getMonth() + 2) y--; // đơn tháng 12 mở vào tháng 1 năm sau
+      orderDate = `${y}-${String(md[2]).padStart(2, '0')}-${String(md[1]).padStart(2, '0')}`;
+    } else issues.push({ level: 'warn', msg: 'Không đọc được ngày đặt trên đơn; số đơn và ngày giao tính theo ô Ngày về đơn.' });
+    // kho -> mã KH
+    const mk = fold(src).match(/kho\s*(?:tong\s*)?(\d+)/);
+    let hit = null;
+    if (mk) { const re = new RegExp(`kho\\s*(?:tong\\s*)?0*${mk[1]}\\b`); const c = acct.customers.filter(x => re.test(fold(x.name))); if (c.length === 1) hit = c[0]; }
+    if (!hit) { const m = matchCustomer(acct.customers, title, /^(don hang|soi bien)\b[\s_-]*/); if (m.hit && m.exact) hit = m.hit; }
+    if (!hit) issues.push({ key: 'customer', level: 'err', msg: `Không dò được cửa hàng/kho từ "${title.trim() || fileName}". Chọn ở ô Mã khách hàng.` });
+    const known = new Set(root.FFM_PC ? Object.values(root.FFM_PC).flat().map(x => x[0]) : []);
+    const lines = [];
+    for (let r = hr + 1; r <= range.e.r; r++) {
+      const q = cellNum(ws, r, cQty);
+      let pc = cellText(ws, r, cPc).trim().toUpperCase(), bc = cBc >= 0 ? cellText(ws, r, cBc).replace(/\D/g, '') : '';
+      if (!pc && !bc) continue;
+      if (q == null || q === 0) continue;
+      const ln = { row: r + 1, barcode: bc, productCode: pc, qty: q, flags: [] };
+      const nm = cName >= 0 ? cellText(ws, r, cName) : '';
+      if (!pc && bc && root.FFM_PC && root.FFM_PC[bc.padStart(14, '0')]) {
+        const c = root.FFM_PC[bc.padStart(14, '0')];
+        if (c.length === 1) { ln.productCode = pc = c[0][0]; ln.flags.push({ level: 'warn', msg: `Đơn không ghi Product code; lấy theo DMSP: ${pc}` }); }
+      }
+      if (!pc) ln.flags.push({ level: 'err', msg: 'Thiếu Product code' });
+      else if (known.size && !known.has(pc)) ln.flags.push({ level: 'warn', msg: `Product code ${pc} không có trong DMSP. Kiểm tra lại mã.` });
+      if (Number.isNaN(q)) ln.flags.push({ level: 'err', msg: `Số lượng không phải số: "${cellText(ws, r, cQty)}"` });
+      else if (q < 0 || !Number.isInteger(q)) ln.flags.push({ level: 'err', msg: 'Số lượng âm hoặc lẻ thập phân' });
+      const dm = pc && root.FFM_PC ? (Object.values(root.FFM_PC).flat().find(x => x[0] === pc) || [])[1] : '';
+      ln.name = `${pc || '?'} · ${dm || nm}`;
+      lines.push(ln);
+    }
+    const seen = {};
+    lines.forEach(l => { if (l.productCode) { if (seen[l.productCode]) l.flags.push({ level: 'warn', msg: `Trùng Product code với dòng ${seen[l.productCode]}` }); else seen[l.productCode] = l.row; } });
+    if (!lines.length) issues.push({ level: 'err', msg: 'Không có dòng nào có số lượng đặt hàng.' });
+    return { prefix: acct.prefix, seq: acct.seq, abbr: '', noAbbr: true, pcMode: true, poDate: orderDate, orderDate, customer: hit ? hit.code : '', store: title.trim(), lines, issues };
   }
 
   /* ---------- Account rules ---------- */
@@ -260,6 +323,16 @@
         }
         return aeonBuild(this, d);
       }
+    }
+    ,
+    SOIBIEN: {
+      label: 'Sói Biển (SOIBIEN)', prefix: 'SOIBIEN', seq: 'dup', noAbbr: true, pcMode: true,
+      accept: '.xlsx,.xls',
+      leadDays: 3, // Sói Biển: ngày giao = ngày đặt trên đơn + 3 (anh Tài chốt 12/11)
+      // DMKH: mã KH bắt đầu SOIBIEN (Tên nội bộ vd "Sói Biển 074_DC_KHO 2 - Lô S3-8")
+      customers: [{"code": "SOIBIEN062", "name": "Sói Biển 62_Số 8 Vũ Thạnh"}, {"code": "SOIBIEN069", "name": "Sói Biển 69_54 Giang Văn Minh"}, {"code": "SOIBIEN076", "name": "Sói Biển 076_16 Xuân La"}, {"code": "SOIBIEN075", "name": "Sói Biển 075_33 Trần Nguyên Đán"}, {"code": "SOIBIEN060", "name": "Sói Biển 60_Ngõ 34 Hoàng Cầu"}, {"code": "SOIBIEN071", "name": "Sói Biển 71 - Số 41 đường Vạn Phúc"}, {"code": "SOIBIEN081", "name": "Sói Biển 080_TT6-01, KĐT mới Văn Phú"}, {"code": "SOIBIEN064", "name": "Sói biển 64_Số 178 Lò Đúc"}, {"code": "SOIBIEN061", "name": "Sói Biển 61_Số 44 Nguyễn Tuân"}, {"code": "SOIBIEN070", "name": "Sói Biển 70 _ Khu đoàn ngoại giao"}, {"code": "SOIBIEN077", "name": "Sói Biển 077_KHO 1 - Số 524 Minh Khai"}, {"code": "SOIBIEN078", "name": "Sói Biển 078_ số 162 Nguyễn Đồng Chi"}, {"code": "SOIBIEN001", "name": "Sói Biển 1_182 Hoàng Văn Thái"}, {"code": "SOIBIEN002", "name": "Sói Biển 2_Số 13B Phan Huy Chú"}, {"code": "SOIBIEN004", "name": "Sói Biển 4_Số 65 Trần Nhân Tông"}, {"code": "SOIBIEN005", "name": "Sói Biển 5_Shophouse 9"}, {"code": "SOIBIEN008", "name": "Sói Biển 8_Số 20 Núi Trúc"}, {"code": "SOIBIEN009", "name": "Sói Biển 9_Số 48 Trần Hưng Đạo"}, {"code": "SOIBIEN010", "name": "Sói Biển 10_Số 16 N7A Nguyễn Thị Thập"}, {"code": "SOIBIEN012", "name": "Sói Biển 12_Shop 1 - Park 11"}, {"code": "SOIBIEN013", "name": "Sói Biển 13_Số 145 Nguyễn Tuân"}, {"code": "SOIBIEN015", "name": "Sói Biển 15_Shophouse 3"}, {"code": "SOIBIEN016", "name": "Sói Biển 16_Số 65 Nguyên Hồng"}, {"code": "SOIBIEN017", "name": "Sói Biển 17_Số 48 Nguyễn Khuyến"}, {"code": "SOIBIEN018", "name": "Sói Biển 18_Số 78 Láng Hạ"}, {"code": "SOIBIEN020", "name": "Sói Biển 20_Số 203 Trung Kính"}, {"code": "SOIBIEN021", "name": "Sói Biển 21_Số 25 Xuân La"}, {"code": "SOIBIEN035", "name": "Sói Biển 35_Số 86D Khu Nhà Vườn"}, {"code": "SOIBIEN040", "name": "Sói Biển 40_Số 50 Lò Đúc"}, {"code": "SOIBIEN041", "name": "Sói Biển 41_116E3 Thái Thịnh"}, {"code": "SOIBIEN042", "name": "Sói Biển 42_52 Nguyễn Huy Tưởng"}, {"code": "SOIBIEN043", "name": "Sói Biển 43_163 Phố Đặng Tiến Đông"}, {"code": "SOIBIEN044", "name": "Sói Biển 44_12C Láng Hạ"}, {"code": "SOIBIEN045", "name": "Sói Biển 45_117 Phan Văn Trường"}, {"code": "SOIBIEN046", "name": "Sói Biển 46_43 Đỗ Quang"}, {"code": "SOIBIEN047", "name": "Sói Biển 47_16 Vũ Trọng Phụng"}, {"code": "SOIBIEN049", "name": "Sói Biển 49_52 Chiến Thắng"}, {"code": "SOIBIEN050", "name": "Sói Biển 50_150 Lê Trọng Tấn"}, {"code": "SOIBIEN048", "name": "Sói Biển 48_423 Minh Khai"}, {"code": "SOIBIEN052", "name": "Sói Biển 52_55 Ngụy Như Kon Tum"}, {"code": "SOIBIEN051", "name": "Sói Biển 51_142 Trần Bình"}, {"code": "SOIBIEN053", "name": "Sói Biển 53_44 Nguyễn Sơn"}, {"code": "SOIBIEN054", "name": "Sói Biển 54_Gh 01S11 Tòa S2.07"}, {"code": "SOIBIEN055", "name": "Sói Biển 55_Gh 01S10 Tòa S2.16"}, {"code": "SOIBIEN056", "name": "Sói Biển 56_Times City"}, {"code": "SOIBIEN057", "name": "Sói Biển 57_106 Hoàng Quốc Việt"}, {"code": "SOIBIEN058", "name": "Sói Biển 58_16 Đoàn Thị Điểm"}, {"code": "SOIBIEN059", "name": "Sói Biển 59_Số 9, B7 Lưu Hữu Phước"}, {"code": "SOIBIEN065", "name": "Sói Biển 65_36 Nguyễn Hoàng Tôn"}, {"code": "SOIBIEN072", "name": "Sói Biển 072_179 Trần Đăng Ninh"}, {"code": "SOIBIEN073", "name": "Sói Biển 073_Vinhomes Smart City"}, {"code": "SOIBIEN080", "name": "Sói Biển 080_VT3, BT7 Xa La"}, {"code": "SOIBIEN063", "name": "Sói biển 63_Số 189 Hoàng Hoa Thám"}, {"code": "SOIBIEN067", "name": "Sói Biển 67_ Mỗ Lao"}, {"code": "SOIBIEN066", "name": "Sói Biển 66_ Số 56 Nguyễn Khuyến"}, {"code": "SOIBIEN068", "name": "Sói Biển 68_Linh Lang"}, {"code": "SOIBIEN074", "name": "Sói Biển 074_DC_KHO 2 - Lô S3-8"}, {"code": "SOIBIEN079", "name": "Sói Biển 079_158 Phố Lạc Trung"}],
+      // Số đơn: SOIBIEN + YYMMDD ngày đặt (in trên đơn) · đơn thứ 2 cùng ngày thêm -02
+      parse(wb, fileName) { return parseSoiBien(this, wb, fileName || ''); }
     }
   };
 

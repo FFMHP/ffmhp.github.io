@@ -30,7 +30,7 @@ const acctNote = () => {
   const a = ACCOUNTS[sel.value];
   $('acctNote').textContent = 'Nhận file ' + a.accept.replace(/,/g,', ') + ' · DMKH ' + a.customers.length + ' cửa hàng.';
   $('mapBox').hidden = !a.aeon;
-  $('nvNote').textContent = a.fixedPo ? 'Account này lấy ngày đặt in trên đơn (ngày giao = ngày đặt + 4). Ô này chỉ dùng khi không đọc được ngày đặt.' : 'Dùng cho số đơn (YYMMDD) và ngày giao = ngày về đơn + 4.';
+  $('nvNote').textContent = (a.fixedPo || a.noAbbr) ? `Account này lấy ngày đặt in trên đơn (ngày giao = ngày đặt + ${a.leadDays}). Ô này chỉ dùng khi không đọc được ngày đặt.` : 'Dùng cho số đơn (YYMMDD) và ngày giao = ngày về đơn + 4.';
   if (a.aeon) { const nS = Object.keys(window.FFM_AEON_MAP_SHARED || {}).length; $('mapNote').textContent = `Bảng Code chuyển đổi: ${Object.keys(window.FFM_AEON_MAP_USER || window.FFM_AEON_MAP || {}).length} mã (${mapInfo})` + (nS ? ` + ${nS} mã team thêm.` : '.'); }
 };
 $('mapBtn').addEventListener('click', () => $('mapIn').click());
@@ -216,7 +216,7 @@ $('addBtn').addEventListener('click', () => {
   $('addBc').value = ''; $('addPc').value = ''; acctNote();
 });
 // Mã KH: team tự thêm (chọn tay ở ô Mã khách hàng là tự lưu; hoặc thêm trong ô "+ Thêm mã khách hàng")
-const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/ };
+const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/ };
 function saveCust(acctKey, code, store){
   const list = (window.FFM_CUST_SHARED || []).filter(x => !(x.acct === acctKey && x.name.trim().toLowerCase() === store.trim().toLowerCase()));
   list.push({ acct: acctKey, code, name: store.trim() });
@@ -352,11 +352,14 @@ function card(r, idx){
     const id = `f-${idx}-${key}`;
     const inp = el('input', {type, id, value: r[key] || ''});
     if (r.demo) inp.disabled = true;
-    inp.addEventListener('change', () => { r[key] = type==='text' ? inp.value.trim().toUpperCase() : inp.value; if (key==='abbr') recompute(false); render(); });
+    inp.addEventListener('change', () => {
+      r[key] = type==='text' ? inp.value.trim().toUpperCase() : inp.value;
+      if (key==='poDate') { r.orderDate = r.poDate; const a = ACCOUNTS[r.acctKey || sel.value]; if (r.poDate) r.delivery = toISO(addDays(new Date(r.poDate+'T00:00'), a.leadDays)); }
+      if (key==='abbr' || key==='poDate') recompute(false); render(); });
     return el('div', {}, el('label', {class:'k', for:id, text:label}), inp);
   };
   f.append(el('div', {}, el('label',{class:'k',text: r.aeon ? 'Cửa hàng (trên đơn)' : r.fixedPo ? 'Nơi nhận (trên phiếu)' : r.source === 'image' ? 'Cửa hàng (tên file ảnh)' : 'Cửa hàng (ô tiêu đề)'}), el('div',{class:'ro',text:r.store || '—'})),
-    r.fixedPo ? field('Số đơn (C9)', 'po', 'text') : field('Viết tắt cửa hàng', 'abbr', 'text'), custSelect(), field('Ngày giao yêu cầu (C13)', 'delivery', 'date'));
+    r.fixedPo ? field('Số đơn (C9)', 'po', 'text') : r.noAbbr ? field('Ngày đặt (trên đơn)', 'poDate', 'date') : field('Viết tắt cửa hàng', 'abbr', 'text'), custSelect(), field('Ngày giao yêu cầu (C13)', 'delivery', 'date'));
   c.append(f);
 
 
@@ -373,7 +376,7 @@ function card(r, idx){
   });
   const total = r.lines.reduce((a,l)=>a+(+l.qty||0),0);
   if (!r.aeon) c.append(el('div',{class:'tbl'}, el('table',{},
-    el('thead',{}, el('tr',{}, el('th',{class:'num',text:'#'}), el('th',{text:'Barcode → cột C'}), el('th',{text: r.editable ? 'Tên SP (DMSP) · ảnh dòng · SL × đơn giá = thành tiền' : 'Tên sản phẩm (đối chiếu)'}), el('th',{class:'num',text:'SL → cột F'}), el('th',{class:'num',text: r.editable ? 'STT phiếu' : 'Dòng gốc'}))),
+    el('thead',{}, el('tr',{}, el('th',{class:'num',text:'#'}), el('th',{text: r.pcMode ? 'Barcode (đối chiếu)' : 'Barcode → cột C'}), el('th',{text: r.editable ? 'Tên SP (DMSP) · ảnh dòng · SL × đơn giá = thành tiền' : r.pcMode ? 'Product code → cột D · tên' : 'Tên sản phẩm (đối chiếu)'}), el('th',{class:'num',text:'SL → cột F'}), el('th',{class:'num',text: r.editable ? 'STT phiếu' : 'Dòng gốc'}))),
     tb,
     el('tfoot',{}, el('tr',{}, el('td',{}), el('td',{text:r.lines.length+' dòng'}), el('td',{}), el('td',{class:'num',text:total.toLocaleString('vi-VN')}), el('td',{}))))));
 

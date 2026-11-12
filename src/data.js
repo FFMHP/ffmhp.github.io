@@ -4,7 +4,7 @@
 (function (root) {
   const BASE = 'data/';
   const FILES = { dmkh: 'DMKH.xlsx', dmsp: 'DMSP.xlsx', map: 'Code chuyển đổi.xlsx', tpl: 'Form final.xlsx' };
-  const PREFIX = { KKTC: 'KKTC', MOR: 'MORGT', BRG: 'BRGMART', AEON: 'AEON' };
+  const PREFIX = { KKTC: 'KKTC', MOR: 'MORGT', BRG: 'BRGMART', AEON: 'AEON', SOIBIEN: 'SOIBIEN' };
   const LABEL = { dmkh: 'DMKH', dmsp: 'DMSP', map: 'Code chuyển đổi', tpl: 'Form final' };
   const CACHE = 'ffm-data-v1:';
   // Google Apps Script: thống kê + bảng "Code AEON" team tự thêm
@@ -42,7 +42,7 @@
       if (!code || !name) continue;
       for (const k in PREFIX) if (code.toUpperCase().startsWith(PREFIX[k])) out[k].push({ code, name });
     }
-    if (!Object.values(out).some(a => a.length)) throw new Error('DMKH: không có mã KH nào của KKTC/MORGT/BRGMART/AEON');
+    if (!Object.values(out).some(a => a.length)) throw new Error('DMKH: không có mã KH nào của KKTC/MORGT/BRGMART/AEON/SOIBIEN');
     return out;
   }
   // DMSP: Barcode -> [[product code, tên, active]]; bỏ vật tư POSM có mã chữ, bỏ barcode lạ (>14 số)
@@ -88,10 +88,10 @@
     const name = FILES[key];
     const st = await stamp(name);
     if (!st) { status[key] = { src: 'gắn sẵn' }; return; }
-    const c = lget(key);
+    const c = lget(key + '@2');
     if (c && c.tag === st.tag) { apply(key, c.val); status[key] = { src: 'web', at: c.mod }; return; }
     const val = PARSE[key](await getBook(name));
-    lset(key, { tag: st.tag, mod: st.mod, val });
+    lset(key + '@2', { tag: st.tag, mod: st.mod, val });
     apply(key, val); status[key] = { src: 'web', at: st.mod, fresh: true };
   }
 
