@@ -1,11 +1,48 @@
-<div class="wrap">
+<div class="wrap page" id="pageHome">
+  <header>
+    <div>
+      <h1>Công cụ <span>team FFM</span></h1>
+      <p class="sub">Chọn nhóm của bạn để vào công cụ. Mỗi nhóm có khung chat riêng; ở trang này là chat chung cả phòng.</p>
+    </div>
+  </header>
+  <nav class="teams" aria-label="Chọn nhóm">
+    <a class="team" href="#/don-hang">
+      <span class="team-ic" aria-hidden="true">📦</span>
+      <b>Team đơn hàng</b>
+      <small>Chuyển đơn khách (Kmart, Morgant, BRG, AEON, Sói Biển, An Nhiên) sang form FORM_2_HP.</small>
+    </a>
+    <a class="team" href="#/khac">
+      <span class="team-ic" aria-hidden="true">🧩</span>
+      <b>Team khác</b>
+      <small>Các công cụ cho những nhóm khác trong FFM.</small>
+    </a>
+  </nav>
+</div>
+
+<div class="wrap page" id="pageOther" hidden>
+  <a class="back" href="#/">← Trang chủ</a>
+  <header>
+    <div>
+      <h1>Team <span>khác</span></h1>
+      <p class="sub">Các tính năng cho những nhóm khác trong FFM.</p>
+    </div>
+  </header>
+  <section class="panel soon">
+    <span class="team-ic" aria-hidden="true">🚧</span>
+    <b>Các tính năng đang được xây dựng</b>
+    <p class="note">Khi có công cụ mới, chúng sẽ xuất hiện ở đây. Cần gì cứ nhắn vào khung chat của team.</p>
+  </section>
+</div>
+
+<div class="wrap page" id="pageOrders" hidden>
+  <a class="back" href="#/">← Trang chủ</a>
   <header>
     <div>
       <h1>FFM <span>Chuyển Đơn</span></h1>
       <p class="sub">Đổi đơn đặt hàng của khách sang form FORM_2_HP để up lên hệ thống. Xử lý ngay trên trình duyệt, file không gửi đi đâu.</p>
       <p class="note" id="dataNote" style="margin:6px 0 0"></p>
     </div>
-    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v31</span>
+    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v32</span>
   </header>
 
   <section class="panel controls" aria-label="Chọn file">
@@ -71,9 +108,10 @@
 
   <button type="button" id="chatBtn" class="chat-btn" aria-expanded="false" aria-controls="chatBox">💬 Chat team <span id="chatBadge" class="chat-badge" hidden>0</span></button>
   <section id="chatBox" class="chat-box" hidden aria-label="Chat team">
-    <header class="chat-h"><b>Chat team FFM</b><button type="button" id="chatClose" class="chat-x" aria-label="Đóng">×</button></header>
+    <header class="chat-h"><b id="chatTitle">Chat chung FFM</b><button type="button" id="chatClose" class="chat-x" aria-label="Đóng">×</button></header>
     <div id="chatList" class="chat-list"></div>
     <p id="chatState" class="chat-state"></p>
+    <div class="chat-who" id="chatWhoBox" hidden><input type="text" id="chatWho" placeholder="Tên bạn (để nhắn tin)" autocomplete="name"></div>
     <div class="chat-f"><textarea id="chatIn" rows="2" maxlength="1000" placeholder="Nhắn cho team… (Enter để gửi)"></textarea><button type="button" id="chatSend" class="primary">Gửi</button></div>
     <p class="chat-note">Ai có link web đều đọc được, không nhắn thông tin nhạy cảm.</p>
   </section>

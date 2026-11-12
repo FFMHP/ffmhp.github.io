@@ -104,4 +104,19 @@ select.cell{font-family:var(--f-body);min-width:16ch}
 .chat-f{display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--line)}
 .chat-f textarea{flex:1;resize:none;font:14px var(--f-body);padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
 .chat-note{margin:0;padding:0 12px 8px;font-size:11px;color:var(--muted)}
+
+.page[hidden]{display:none}
+.back{display:inline-block;margin:0 0 8px;color:var(--muted);text-decoration:none;font-size:14px}
+.back:hover{color:var(--accent)}
+.teams{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:8px}
+.team{display:flex;flex-direction:column;gap:6px;padding:24px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--fg);text-decoration:none;transition:border-color .15s,transform .15s}
+.team:hover,.team:focus-visible{border-color:var(--accent);transform:translateY(-2px)}
+.team b{font-size:20px}
+.team small{color:var(--muted);font-size:14px;line-height:1.45}
+.team-ic{font-size:30px}
+.soon{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:28px}
+.soon b{font-size:18px}
+.chat-who{padding:6px 12px 0}
+.chat-who[hidden]{display:none}
+.chat-who input{width:100%;box-sizing:border-box;font:14px var(--f-body);padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
 </style>

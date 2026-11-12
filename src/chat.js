@@ -1,18 +1,53 @@
-/* Khung chat team: tin nhắn lưu ở sheet "Chat" (Google Sheet thống kê). Hỏi tin mới 15 giây/lần khi mở khung, 60 giây/lần khi đóng. */
+/* Trang chủ (2 nhóm) + chat theo phòng.
+   #/          -> trang chủ, phòng "tong" (chat chung)
+   #/don-hang  -> công cụ chuyển đơn, phòng "donhang"
+   #/khac      -> team khác (đang xây dựng), phòng "khac"
+   Tin nhắn lưu ở sheet "Chat" (cột Phòng). Hỏi tin mới 15 giây/lần khi mở khung, 60 giây/lần khi đóng. */
 (function () {
   const $ = id => document.getElementById(id);
+  const ROUTES = {
+    '': { page: 'pageHome', room: 'tong', title: 'Chat chung FFM', doc: 'Công cụ team FFM' },
+    'don-hang': { page: 'pageOrders', room: 'donhang', title: 'Chat team đơn hàng', doc: 'FFM Chuyển Đơn' },
+    'khac': { page: 'pageOther', room: 'khac', title: 'Chat team khác', doc: 'FFM · Team khác' }
+  };
   const API = window.FFM_API || '';
-  if (!/^https:/.test(API)) { const b = $('chatBtn'); if (b) b.hidden = true; return; }
   const box = $('chatBox'), list = $('chatList'), inp = $('chatIn'), btn = $('chatBtn'), badge = $('chatBadge');
-  let msgs = [], last = 0, open = false, timer = null, busy = false;
-  const LS = 'ffm-chat-seen';
-  let seen = 0; try { seen = +localStorage.getItem(LS) || 0; } catch (e) {}
-  const me = () => ($('who').value || '').trim();
+  const who = $('who'), chatWho = $('chatWho');
+  let room = 'tong', msgs = [], last = 0, open = false, timer = null, busy = false, gen = 0;
+  const seenKey = () => 'ffm-chat-seen-' + room;
+  let seen = 0;
+  const me = () => (who.value || '').trim();
+
+  // ---- trang ----
+  function route() {
+    const key = (location.hash.replace(/^#\/?/, '').split(/[/?]/)[0] || '').toLowerCase();
+    const R = ROUTES[key] || ROUTES[''];
+    Object.values(ROUTES).forEach(x => { $(x.page).hidden = x.page !== R.page; });
+    document.title = R.doc;
+    window.scrollTo(0, 0);
+    setRoom(R.room, R.title);
+  }
+  window.addEventListener('hashchange', route);
+
+  // ---- tên người nhắn (dùng chung với ô "Người làm") ----
+  function syncWho() {
+    chatWho.value = me();
+    $('chatWhoBox').hidden = !!me();
+  }
+  chatWho.addEventListener('change', () => {
+    who.value = chatWho.value.trim();
+    try { localStorage.setItem('ffm-user', who.value); } catch (e) {}
+    who.dispatchEvent(new Event('change'));
+    syncWho(); draw();
+  });
+  who.addEventListener('change', syncWho);
+
+  // ---- chat ----
   const fmt = t => { const d = new Date(t), p = n => String(n).padStart(2, '0'); const today = new Date().toDateString() === d.toDateString(); return (today ? '' : `${p(d.getDate())}/${p(d.getMonth() + 1)} `) + `${p(d.getHours())}:${p(d.getMinutes())}`; };
   function draw() {
     const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
     list.innerHTML = '';
-    if (!msgs.length) { const e = document.createElement('p'); e.className = 'chat-empty'; e.textContent = 'Chưa có tin nhắn. Hỏi gì team cứ nhắn ở đây.'; list.append(e); }
+    if (!msgs.length) { const e = document.createElement('p'); e.className = 'chat-empty'; e.textContent = room === 'tong' ? 'Chưa có tin nhắn chung. Nhắn gì cho cả phòng FFM cứ gõ ở đây.' : 'Chưa có tin nhắn trong nhóm này.'; list.append(e); }
     msgs.forEach(m => {
       const row = document.createElement('div'); row.className = 'chat-msg' + (m.u === me() ? ' mine' : '');
       const h = document.createElement('div'); h.className = 'chat-meta'; h.textContent = `${m.u || '?'} · ${fmt(m.t)}`;
@@ -24,37 +59,49 @@
     badge.textContent = unread > 9 ? '9+' : String(unread); badge.hidden = open || !unread;
   }
   async function poll() {
-    if (busy || document.hidden) return;
-    busy = true;
+    if (!API || busy || document.hidden) return;
+    busy = true; const g = gen, r0 = room;
     try {
-      const r = await fetch(API + '?t=chat&since=' + last, { cache: 'no-store' });
+      const r = await fetch(`${API}?t=chat&room=${r0}&since=${last}`, { cache: 'no-store' });
       const j = await r.json();
+      if (g !== gen) return; // đã đổi phòng trong lúc chờ
       if (j && j.msgs && j.msgs.length) {
         const keys = new Set(msgs.map(m => m.t + m.u + m.m));
         j.msgs.forEach(m => { if (!keys.has(m.t + m.u + m.m)) msgs.push(m); });
         msgs.sort((a, b) => a.t - b.t); msgs = msgs.slice(-100);
-        last = msgs[msgs.length - 1].t; draw();
+        last = msgs[msgs.length - 1].t;
       }
+      draw();
       $('chatState').textContent = '';
-    } catch (e) { $('chatState').textContent = 'Mất kết nối, đang thử lại…'; }
+    } catch (e) { if (g === gen) $('chatState').textContent = 'Mất kết nối, đang thử lại…'; }
     finally { busy = false; }
   }
   function schedule() { clearInterval(timer); timer = setInterval(poll, open ? 15000 : 60000); }
-  function markSeen() { if (msgs.length) { seen = msgs[msgs.length - 1].t; try { localStorage.setItem(LS, String(seen)); } catch (e) {} } draw(); }
+  function markSeen() { if (msgs.length) { seen = msgs[msgs.length - 1].t; try { localStorage.setItem(seenKey(), String(seen)); } catch (e) {} } draw(); }
+  function setRoom(r, title) {
+    if (r === room && msgs.length) return;
+    room = r; gen++; msgs = []; last = 0; busy = false;
+    try { seen = +localStorage.getItem(seenKey()) || 0; } catch (e) { seen = 0; }
+    $('chatTitle').textContent = title;
+    btn.firstChild.textContent = `💬 ${title} `;
+    draw();
+    poll().then(() => { if (open) markSeen(); });
+  }
   btn.addEventListener('click', () => {
     open = !open; box.hidden = !open; btn.setAttribute('aria-expanded', String(open));
-    if (open) { poll().then(markSeen); inp.focus(); } schedule();
+    if (open) { syncWho(); poll().then(markSeen); (me() ? inp : chatWho).focus(); }
+    schedule();
   });
   $('chatClose').addEventListener('click', () => btn.click());
   async function send() {
     const text = inp.value.trim(); if (!text) return;
-    if (!me()) { $('chatState').textContent = 'Nhập tên ở ô "Người làm" trước khi nhắn.'; $('who').focus(); return; }
+    if (!me()) { $('chatState').textContent = 'Nhập tên bạn trước khi nhắn.'; syncWho(); chatWho.focus(); return; }
     inp.value = ''; inp.disabled = true;
-    const local = { t: Date.now(), u: me(), m: text, pending: true };
+    const local = { t: Date.now(), u: me(), m: text };
     msgs.push(local); draw(); list.scrollTop = list.scrollHeight;
     try {
-      await fetch(API, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ event: 'chat', user: me(), msg: text }) });
-      msgs = msgs.filter(m => m !== local); // lấy lại bản có giờ chuẩn từ máy chủ
+      await fetch(API, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ event: 'chat', room, user: me(), msg: text }) });
+      msgs = msgs.filter(m => m !== local);
       await new Promise(r => setTimeout(r, 800)); await poll(); markSeen();
     } catch (e) { $('chatState').textContent = 'Chưa gửi được, kiểm tra mạng rồi gửi lại.'; inp.value = text; msgs = msgs.filter(m => m !== local); draw(); }
     finally { inp.disabled = false; inp.focus(); }
@@ -62,5 +109,9 @@
   $('chatSend').addEventListener('click', send);
   inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
-  poll(); schedule();
+
+  if (!/^https:/.test(API)) btn.hidden = true;
+  syncWho();
+  route();
+  schedule();
 })();
