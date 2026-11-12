@@ -12,6 +12,8 @@ const libs = {
   tessOpts: LIBS.tessOpts
 };
 const $ = id => document.getElementById(id);
+// thống kê: gửi số liệu (không có nội dung đơn) về Google Sheet "FFM Chuyển Đơn - Thống kê"
+const LOG_URL = window.FFM_LOG_URL || 'https://script.google.com/macros/s/AKfycbxLBieSz9Cp00--Eade0ZZOoDQxs_2QduXNVWVec236x7ny-YgnR-6curOzhY79ZNnovQ/exec';
 const state = { files: [], results: [], demo: true };
 let dl = null;
 if (window.claude && window.claude.use) window.claude.use('downloads').then(d => { dl = d; }).catch(() => {});
@@ -86,7 +88,19 @@ async function addFiles(fl){
   $('btnGo').disabled = !state.files.length;
 }
 
+const who = $('who');
+try { who.value = localStorage.getItem('ffm-user') || ''; } catch(e) {}
+who.addEventListener('change', () => { who.value = who.value.trim(); try { localStorage.setItem('ffm-user', who.value); } catch(e) {} });
+function logEvent(d){
+  if (!/^https:/.test(LOG_URL)) return;
+  try {
+    fetch(LOG_URL, { method:'POST', mode:'no-cors', keepalive:true, headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify(Object.assign({ user: who.value.trim(), ver: ($('ver').textContent || '').replace('Phiên bản ', '') }, d)) }).catch(() => {});
+  } catch(e) {}
+}
+
 $('btnGo').addEventListener('click', async () => {
+  if (!who.value.trim()) { toast('Nhập tên người làm trước khi chuyển đổi (chỉ nhập 1 lần).', 'err'); who.focus(); return; }
   if (window.FFM_DATA) { const t = setTimeout(() => toast('Đang tải bảng DMKH/DMSP mới nhất…'), 300); await window.FFM_DATA.ready; clearTimeout(t); }
   const acct = ACCOUNTS[sel.value], key = sel.value;
   state.demo = false;
@@ -108,6 +122,8 @@ $('btnGo').addEventListener('click', async () => {
   recompute(true);
   render();
   toast('');
+  const okN = out.filter(r => !r.error && status(r) !== 'err').length;
+  logEvent({ event:'Chuyển đổi', acct:key, files:files.length, orders:out.filter(r => !r.error).length, ok:okN, err:out.length - okN, names:files.map(f => f.name).join(' | ') });
 });
 
 const live = r => r.issues.filter(i => !(i.key && i.key !== 'abbrNote' && r[i.key])).concat(r.poNote ? [{level:'warn', msg:r.poNote}] : []);
@@ -200,7 +216,7 @@ function card(r, idx){
   btn.disabled = r.demo || st === 'err' || !!r.error;
   btn.addEventListener('click', async () => {
     btn.disabled = true;
-    try { const bytes = await buildForm(window.FFM_TPL || TEMPLATE, r); await save(outName(r), new Blob([bytes])); }
+    try { const bytes = await buildForm(window.FFM_TPL || TEMPLATE, r); if (await save(outName(r), new Blob([bytes]))) logEvent({ event:'Tải file', acct:r.acctKey || sel.value, orders:1, ok:1, names:outName(r) }); }
     catch(e) { toast(e.message, 'err'); }
     btn.disabled = false;
   });
@@ -269,18 +285,19 @@ $('btnAll').addEventListener('click', async () => {
   for (const r of ready) zip.file(outName(r), await buildForm(window.FFM_TPL || TEMPLATE, r));
   const blob = await zip.generateAsync({type:'blob'});
   const d = new Date(), p = n => String(n).padStart(2,'0');
-  await save(`${sel.value}_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}.zip`, blob);
+  if (await save(`${sel.value}_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}.zip`, blob)) logEvent({ event:'Tải tất cả (zip)', acct:sel.value, orders:ready.length, ok:ready.length, names:ready.map(outName).join(' | ') });
 });
 
 async function save(filename, blob){
   if (dl) {
-    try { await dl.save({filename, data: blob}); toast('Đã tải ' + filename, 'ok'); }
+    try { await dl.save({filename, data: blob}); toast('Đã tải ' + filename, 'ok'); return true; }
     catch(e) { toast(e && e.code === 'declined' ? 'Đã huỷ tải.' : 'Không tải được: ' + (e && e.message || e), 'err'); }
-    return;
+    return false;
   }
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; document.body.append(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   toast('Đã tải ' + filename, 'ok');
+  return true;
 }
 function toast(msg, kind){ const t=$('toast'); t.textContent=msg; t.className='toast '+(kind||''); }
 

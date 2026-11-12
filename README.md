@@ -22,3 +22,7 @@ Cách thay bảng mới:
 
 Dưới tiêu đề trang web có dòng "Bảng dữ liệu · DMKH: cập nhật …" để biết đang dùng bảng ngày nào.
 Nếu bảng lỗi (đổi tên cột…), trang tự dùng bảng gắn sẵn và ghi "lỗi, dùng bảng gắn sẵn".
+
+## Thống kê sử dụng
+
+Mỗi lần chuyển đổi / tải file, web ghi 1 dòng (người làm, account, số file, số đơn, đơn tải được / còn lỗi) vào Google Sheet **"FFM Chuyển Đơn - Thống kê"** trên Drive của anh Tài (sheet `Log`). Không gửi nội dung đơn hàng.
