@@ -193,4 +193,30 @@ label.step.done i{background:var(--ok);border-color:var(--ok);color:#fff}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .logo-img{background:#fff;border-radius:6px;padding:3px 6px;height:34px}}
 :root[data-theme="dark"] .logo-img{background:#fff;border-radius:6px;padding:3px 6px}
 .brand-sep{width:1px;height:24px;background:var(--line)}
+
+/* ---- v35: nền động — đơn hàng → kho → xe giao ---- */
+.scene{position:fixed;left:0;right:0;bottom:0;height:150px;z-index:0;pointer-events:none;color:var(--accent);opacity:.2}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .scene{opacity:.28}}
+.topbar,.wrap,.foot{position:relative;z-index:1}
+.scene svg{width:100%;height:100%;display:block}
+.scene g,.scene line,.scene path,.scene rect,.scene circle{fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.scene .road{stroke-width:2.5}.scene .lane{stroke-dasharray:18 14;stroke-width:1.6;animation:lane 1.2s linear infinite}
+.scene text{fill:currentColor;stroke:none;font:600 12px var(--f-body)}
+.scene .tt{font-size:9px;letter-spacing:.06em}
+.scene .wh .roof,.scene .cargo{fill:color-mix(in srgb,currentColor 12%,transparent)}
+.scene .trail{stroke-dasharray:4 8;stroke-width:1.5;opacity:.6}
+.scene .screen{animation:blinkscr 12s infinite}
+.scene .doc{offset-path:path("M140 100 Q 330 20 520 96");offset-rotate:0deg;animation:doc 12s ease-in-out infinite}
+.scene .box{animation:box 12s linear infinite}.scene .b2{animation-delay:.5s}.scene .b3{animation-delay:1s}
+.scene .truck{animation:truck 12s ease-in-out infinite}
+.scene .wheel{animation:spin .6s linear infinite;transform-box:fill-box;transform-origin:center;stroke-dasharray:12 4}
+@keyframes lane{to{stroke-dashoffset:-32}}
+@keyframes blinkscr{0%,4%{fill:color-mix(in srgb,currentColor 35%,transparent)}8%,100%{fill:none}}
+@keyframes doc{0%{offset-distance:0%;opacity:0}4%{opacity:1}26%{offset-distance:100%;opacity:1}30%,100%{offset-distance:100%;opacity:0}}
+@keyframes box{0%,28%{transform:translate(630px,148px);opacity:0}31%{opacity:1}50%{transform:translate(790px,148px);opacity:1}52%,100%{transform:translate(790px,148px);opacity:0}}
+@keyframes truck{0%,52%{transform:translateX(800px)}82%{transform:translateX(1260px)}82.1%{transform:translateX(-140px)}100%{transform:translateX(800px)}}
+@media (prefers-reduced-motion:reduce){.scene *{animation:none!important}.scene .doc,.scene .box{display:none}.scene .truck{transform:translateX(800px)}}
+@media print{.scene{display:none}}
+.foot{padding-bottom:170px}
+@media (max-width:560px){.scene{height:90px}}
 </style>
