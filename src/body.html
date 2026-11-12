@@ -5,7 +5,7 @@
       <p class="sub">Đổi đơn đặt hàng của khách sang form FORM_2_HP để up lên hệ thống. Xử lý ngay trên trình duyệt, file không gửi đi đâu.</p>
       <p class="note" id="dataNote" style="margin:6px 0 0"></p>
     </div>
-    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v23</span>
+    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v24</span>
   </header>
 
   <section class="panel controls" aria-label="Chọn file">
@@ -18,6 +18,15 @@
       <div id="mapBox" hidden style="margin-top:8px">
         <p class="note" id="mapNote" style="margin:0 0 6px"></p>
         <button type="button" id="mapBtn" class="small">Nạp bảng Code chuyển đổi</button>
+        <details id="addBox" style="margin-top:6px">
+          <summary class="note" style="cursor:pointer">+ Thêm mã chuyển đổi</summary>
+          <div style="display:grid;gap:6px;margin-top:6px">
+            <input type="text" id="addBc" placeholder="Barcode trên đơn AEON" inputmode="numeric">
+            <input type="text" id="addPc" placeholder="Product code điền form">
+            <button type="button" id="addBtn" class="small">Lưu vào bảng chung</button>
+            <p class="note" id="addNote" style="margin:0"></p>
+          </div>
+        </details>
         <input type="file" id="mapIn" accept=".xlsx,.xls" hidden>
       </div>
     </div>

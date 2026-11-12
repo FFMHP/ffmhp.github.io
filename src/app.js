@@ -31,7 +31,7 @@ const acctNote = () => {
   $('acctNote').textContent = 'Nhận file ' + a.accept.replace(/,/g,', ') + ' · DMKH ' + a.customers.length + ' cửa hàng.';
   $('mapBox').hidden = !a.aeon;
   $('nvNote').textContent = a.fixedPo ? 'Account này lấy ngày đặt in trên đơn (ngày giao = ngày đặt + 4). Ô này chỉ dùng khi không đọc được ngày đặt.' : 'Dùng cho số đơn (YYMMDD) và ngày giao = ngày về đơn + 4.';
-  if (a.aeon) $('mapNote').textContent = `Bảng Code chuyển đổi: ${Object.keys(window.FFM_AEON_MAP_USER || window.FFM_AEON_MAP || {}).length} mã (${mapInfo}).`;
+  if (a.aeon) { const nS = Object.keys(window.FFM_AEON_MAP_SHARED || {}).length; $('mapNote').textContent = `Bảng Code chuyển đổi: ${Object.keys(window.FFM_AEON_MAP_USER || window.FFM_AEON_MAP || {}).length} mã (${mapInfo})` + (nS ? ` + ${nS} mã team thêm.` : '.'); }
 };
 $('mapBtn').addEventListener('click', () => $('mapIn').click());
 $('mapIn').addEventListener('change', async () => {
@@ -188,6 +188,22 @@ function autoSaveAeon(l){
   const inDmsp = window.FFM_PC && Object.values(window.FFM_PC).some(a => a.some(x => x[0] === l.productCode));
   if (inDmsp) saveAeonCode(l);
 }
+// thêm mã trực tiếp, không cần có đơn
+$('addPc').addEventListener('input', () => {
+  const pc = $('addPc').value.trim().toUpperCase(), hit = pc && window.FFM_PC && Object.values(window.FFM_PC).flat().find(x => x[0] === pc);
+  $('addNote').textContent = pc ? (hit ? hit[1] : 'Không thấy mã này trong DMSP.') : '';
+});
+$('addBtn').addEventListener('click', () => {
+  const bc = $('addBc').value.replace(/\D/g, ''), pc = $('addPc').value.trim().toUpperCase();
+  const official = window.FFM_AEON_MAP || {};
+  const hit = pc && window.FFM_PC && Object.values(window.FFM_PC).flat().find(x => x[0] === pc);
+  if (!/^\d{8,14}$/.test(bc)) { $('addNote').textContent = 'Barcode phải là 8–14 chữ số.'; return; }
+  if (!hit) { $('addNote').textContent = 'Product code không có trong DMSP, chưa lưu.'; return; }
+  if (official[bc]) { $('addNote').textContent = `Barcode này đã có trong file Code chuyển đổi: ${official[bc]}. Muốn đổi thì báo anh Tài sửa file.`; return; }
+  saveAeonCode({ barcode: bc, productCode: pc, aeonName: '' });
+  $('addNote').textContent = `Đã lưu ${bc} → ${pc} (${hit[1]}).`;
+  $('addBc').value = ''; $('addPc').value = ''; acctNote();
+});
 function saveAeonCode(l){
   if (!who.value.trim()) { toast('Nhập tên người làm trước.', 'err'); who.focus(); return; }
   const bc = l.barcode, pc = l.productCode;

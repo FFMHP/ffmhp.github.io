@@ -93,7 +93,7 @@ select.cell{font-family:var(--f-body);min-width:16ch}
       <p class="sub">Đổi đơn đặt hàng của khách sang form FORM_2_HP để up lên hệ thống. Xử lý ngay trên trình duyệt, file không gửi đi đâu.</p>
       <p class="note" id="dataNote" style="margin:6px 0 0"></p>
     </div>
-    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v23</span>
+    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v24</span>
   </header>
 
   <section class="panel controls" aria-label="Chọn file">
@@ -106,6 +106,15 @@ select.cell{font-family:var(--f-body);min-width:16ch}
       <div id="mapBox" hidden style="margin-top:8px">
         <p class="note" id="mapNote" style="margin:0 0 6px"></p>
         <button type="button" id="mapBtn" class="small">Nạp bảng Code chuyển đổi</button>
+        <details id="addBox" style="margin-top:6px">
+          <summary class="note" style="cursor:pointer">+ Thêm mã chuyển đổi</summary>
+          <div style="display:grid;gap:6px;margin-top:6px">
+            <input type="text" id="addBc" placeholder="Barcode trên đơn AEON" inputmode="numeric">
+            <input type="text" id="addPc" placeholder="Product code điền form">
+            <button type="button" id="addBtn" class="small">Lưu vào bảng chung</button>
+            <p class="note" id="addNote" style="margin:0"></p>
+          </div>
+        </details>
         <input type="file" id="mapIn" accept=".xlsx,.xls" hidden>
       </div>
     </div>
@@ -1072,7 +1081,7 @@ const acctNote = () => {
   $('acctNote').textContent = 'Nhận file ' + a.accept.replace(/,/g,', ') + ' · DMKH ' + a.customers.length + ' cửa hàng.';
   $('mapBox').hidden = !a.aeon;
   $('nvNote').textContent = a.fixedPo ? 'Account này lấy ngày đặt in trên đơn (ngày giao = ngày đặt + 4). Ô này chỉ dùng khi không đọc được ngày đặt.' : 'Dùng cho số đơn (YYMMDD) và ngày giao = ngày về đơn + 4.';
-  if (a.aeon) $('mapNote').textContent = `Bảng Code chuyển đổi: ${Object.keys(window.FFM_AEON_MAP_USER || window.FFM_AEON_MAP || {}).length} mã (${mapInfo}).`;
+  if (a.aeon) { const nS = Object.keys(window.FFM_AEON_MAP_SHARED || {}).length; $('mapNote').textContent = `Bảng Code chuyển đổi: ${Object.keys(window.FFM_AEON_MAP_USER || window.FFM_AEON_MAP || {}).length} mã (${mapInfo})` + (nS ? ` + ${nS} mã team thêm.` : '.'); }
 };
 $('mapBtn').addEventListener('click', () => $('mapIn').click());
 $('mapIn').addEventListener('change', async () => {
@@ -1229,6 +1238,22 @@ function autoSaveAeon(l){
   const inDmsp = window.FFM_PC && Object.values(window.FFM_PC).some(a => a.some(x => x[0] === l.productCode));
   if (inDmsp) saveAeonCode(l);
 }
+// thêm mã trực tiếp, không cần có đơn
+$('addPc').addEventListener('input', () => {
+  const pc = $('addPc').value.trim().toUpperCase(), hit = pc && window.FFM_PC && Object.values(window.FFM_PC).flat().find(x => x[0] === pc);
+  $('addNote').textContent = pc ? (hit ? hit[1] : 'Không thấy mã này trong DMSP.') : '';
+});
+$('addBtn').addEventListener('click', () => {
+  const bc = $('addBc').value.replace(/\D/g, ''), pc = $('addPc').value.trim().toUpperCase();
+  const official = window.FFM_AEON_MAP || {};
+  const hit = pc && window.FFM_PC && Object.values(window.FFM_PC).flat().find(x => x[0] === pc);
+  if (!/^\d{8,14}$/.test(bc)) { $('addNote').textContent = 'Barcode phải là 8–14 chữ số.'; return; }
+  if (!hit) { $('addNote').textContent = 'Product code không có trong DMSP, chưa lưu.'; return; }
+  if (official[bc]) { $('addNote').textContent = `Barcode này đã có trong file Code chuyển đổi: ${official[bc]}. Muốn đổi thì báo anh Tài sửa file.`; return; }
+  saveAeonCode({ barcode: bc, productCode: pc, aeonName: '' });
+  $('addNote').textContent = `Đã lưu ${bc} → ${pc} (${hit[1]}).`;
+  $('addBc').value = ''; $('addPc').value = ''; acctNote();
+});
 function saveAeonCode(l){
   if (!who.value.trim()) { toast('Nhập tên người làm trước.', 'err'); who.focus(); return; }
   const bc = l.barcode, pc = l.productCode;
