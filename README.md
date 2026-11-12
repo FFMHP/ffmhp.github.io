@@ -29,7 +29,7 @@ Mỗi lần chuyển đổi / tải file, web ghi 1 dòng (người làm, accoun
 
 ## Code chuyển đổi AEON do team tự thêm
 
-Khi đơn AEON có barcode chưa có trong bảng, người làm chọn hoặc nhập product code rồi bấm **"+ Lưu vào bảng Code chuyển đổi chung"**.
+Khi đơn AEON có barcode chưa có trong bảng, người làm chọn hoặc nhập product code là **tự động lưu** vào bảng chung.
 Mã được lưu vào sheet **`Code AEON`** trong Google Sheet "FFM Chuyển Đơn - Thống kê" (có tên người thêm và thời gian), cả team dùng được từ lần mở web sau.
 - Chỉ lưu được product code có trong DMSP.
 - File `data/Code chuyển đổi.xlsx` luôn được ưu tiên hơn bảng team thêm.

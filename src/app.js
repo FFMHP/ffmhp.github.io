@@ -176,6 +176,13 @@ function editCell(r, l, key){
 
 const flagEls = l => l.flags.map(x => el('span',{class:'flag'+(x.level==='info'?' info':''),text:(x.level==='info'?'ⓘ ':'⚠ ')+x.msg}));
 // AEON: barcode trên đơn -> product code (cột D)
+// chọn / nhập product code là tự lưu vào bảng chung (chỉ mã có trong DMSP, không đè bảng Code chuyển đổi của anh Tài)
+function autoSaveAeon(l){
+  const official = window.FFM_AEON_MAP || {}, shared = window.FFM_AEON_MAP_SHARED || {};
+  if (!l.productCode || !l.barcode || official[l.barcode] || shared[l.barcode] === l.productCode) return;
+  const inDmsp = window.FFM_PC && Object.values(window.FFM_PC).some(a => a.some(x => x[0] === l.productCode));
+  if (inDmsp) saveAeonCode(l);
+}
 function saveAeonCode(l){
   if (!who.value.trim()) { toast('Nhập tên người làm trước.', 'err'); who.focus(); return; }
   const bc = l.barcode, pc = l.productCode;
@@ -185,8 +192,8 @@ function saveAeonCode(l){
   // áp luôn cho các dòng cùng barcode đang mở
   state.results.forEach(r => { if (r.aeon) r.lines.forEach(x => { if (x.barcode === bc) { x.productCode = pc; x.pcState = 'map'; validateAeon(x); } }); });
   if (window.FFM_DATA && window.FFM_DATA.status.shared) window.FFM_DATA.status.shared.n = Object.keys(window.FFM_AEON_MAP_SHARED).length;
-  dataNote(); render();
-  toast(`Đã lưu ${bc} → ${pc} vào bảng chung. Cả team dùng được từ lần mở web tiếp theo.`, 'ok');
+  dataNote();
+  toast(`Đã tự lưu ${bc} → ${pc} vào bảng Code chuyển đổi chung. Lần sau cả team gặp barcode này sẽ tự điền.`, 'ok');
 }
 function aeonTable(r){
   const tb = el('tbody');
@@ -199,23 +206,18 @@ function aeonTable(r){
       l.cands.forEach(cd => pcCtl.add(new Option(`${cd.code} · ${cd.name}${cd.active ? '' : ' (ngừng)'}`, cd.code)));
       if (l.productCode && !l.cands.some(cd => cd.code === l.productCode)) pcCtl.add(new Option(l.productCode + ' · (bảng Code chuyển đổi)', l.productCode));
       pcCtl.value = l.productCode || '';
-      pcCtl.addEventListener('change', () => { l.productCode = pcCtl.value; l.pcState = 'chosen'; validateAeon(l); render(); });
+      pcCtl.addEventListener('change', () => { l.productCode = pcCtl.value; l.pcState = 'chosen'; validateAeon(l); autoSaveAeon(l); render(); });
     } else {
       pcCtl = el('input', {type:'text', class:'cell', value:l.productCode || '', 'aria-label':'Product code dòng ' + (i+1)});
-      pcCtl.addEventListener('change', () => { l.productCode = pcCtl.value.trim().toUpperCase(); l.pcState = 'manual'; validateAeon(l); render(); });
+      pcCtl.addEventListener('change', () => { l.productCode = pcCtl.value.trim().toUpperCase(); l.pcState = 'manual'; validateAeon(l); autoSaveAeon(l); render(); });
       pcCtl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); pcCtl.blur(); } });
     }
     const shared = window.FFM_AEON_MAP_SHARED || {};
     const official = window.FFM_AEON_MAP || {};
-    const canSave = ['chosen','manual'].includes(l.pcState) && l.productCode && l.barcode && !official[l.barcode] && shared[l.barcode] !== l.productCode;
+    const canSave = ['chosen','manual'].includes(l.pcState) && l.productCode && l.barcode && !official[l.barcode];
     const inDmsp = l.productCode && window.FFM_PC && Object.values(window.FFM_PC).some(a => a.some(x => x[0] === l.productCode));
     let saveBtn = null;
-    if (canSave) {
-      saveBtn = el('button', {class:'small', type:'button', text: inDmsp ? '+ Lưu vào bảng Code chuyển đổi chung' : 'Mã này không có trong DMSP, chưa lưu được'});
-      saveBtn.disabled = !inDmsp;
-      saveBtn.title = 'Lần sau cả team gặp barcode ' + l.barcode + ' sẽ tự điền ' + l.productCode;
-      saveBtn.addEventListener('click', () => saveAeonCode(l));
-    }
+    if (canSave && !inDmsp) saveBtn = el('div', {class:'sub2', text:'Mã này không có trong DMSP nên chưa lưu vào bảng chung.'});
     const src = { map: (shared[l.barcode] && !official[l.barcode] ? 'theo bảng Code chuyển đổi (team thêm)' : 'theo bảng Code chuyển đổi'), dmsp:'theo DMSP', multi:'mã gốc trong DMSP', chosen:'chọn tay', manual:'nhập tay', pick:'', none:'' }[l.pcState] || '';
     tb.append(el('tr', {class:lvl},
       el('td', {class:'num', text:String(i+1)}),
