@@ -1,0 +1,50 @@
+<div class="wrap">
+  <header>
+    <div>
+      <h1>FFM <span>Chuyển Đơn</span></h1>
+      <p class="sub">Đổi đơn đặt hàng của khách sang form FORM_2_HP để up lên hệ thống. Xử lý ngay trên trình duyệt, file không gửi đi đâu.</p>
+      <p class="note" id="dataNote" style="margin:6px 0 0"></p>
+    </div>
+    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v20</span>
+  </header>
+
+  <section class="panel controls" aria-label="Chọn file">
+    <div>
+      <label class="k" for="acct">1 · Account</label>
+      <select id="acct"></select>
+      <p class="note" id="acctNote" style="margin:8px 0 0"></p>
+      <div id="mapBox" hidden style="margin-top:8px">
+        <p class="note" id="mapNote" style="margin:0 0 6px"></p>
+        <button type="button" id="mapBtn" class="small">Nạp bảng Code chuyển đổi</button>
+        <input type="file" id="mapIn" accept=".xlsx,.xls" hidden>
+      </div>
+    </div>
+    <div>
+      <label class="k" for="ngayVe">Ngày về đơn</label>
+      <input type="date" id="ngayVe">
+      <p class="note" id="nvNote" style="margin:8px 0 0">Dùng cho số đơn (YYMMDD) và ngày giao = ngày về đơn + 4.</p>
+    </div>
+    <div style="min-width:0">
+      <label class="k" for="fileIn">2 · File gốc</label>
+      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Chọn hoặc kéo thả file gốc">
+        <div><b>Kéo thả file vào đây</b><small>hoặc bấm để chọn · được chọn nhiều file cùng lúc</small></div>
+      </div>
+      <input type="file" id="fileIn" multiple hidden>
+      <div class="files" id="fileList"></div>
+    </div>
+    <div class="go">
+      <label class="k">3 · Chuyển</label>
+      <button class="primary" id="btnGo" disabled>Chuyển đổi</button>
+    </div>
+  </section>
+
+  <div class="bar">
+    <div class="summary" id="summary">Chưa có file. Bên dưới là ví dụ kết quả từ đơn Kmart The Emerald ngày 10/11.</div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <span class="toast" id="toast" role="status"></span>
+      <button id="btnAll" hidden>Tải tất cả (.zip)</button>
+    </div>
+  </div>
+
+  <div class="list" id="results"></div>
+</div>
