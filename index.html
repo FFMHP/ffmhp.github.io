@@ -93,7 +93,7 @@ select.cell{font-family:var(--f-body);min-width:16ch}
       <p class="sub">Đổi đơn đặt hàng của khách sang form FORM_2_HP để up lên hệ thống. Xử lý ngay trên trình duyệt, file không gửi đi đâu.</p>
       <p class="note" id="dataNote" style="margin:6px 0 0"></p>
     </div>
-    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v29</span>
+    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v30</span>
   </header>
 
   <section class="panel controls" aria-label="Chọn file">
@@ -822,6 +822,52 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
     return { prefix: acct.prefix, seq: acct.seq, abbr: '', noAbbr: true, pcMode: true, poDate: orderDate, orderDate, customer: hit ? hit.code : '', store: title.trim(), lines, issues };
   }
 
+  /* ---------- An Nhiên: 1 file nhiều sheet, mỗi sheet có số lượng = 1 đơn ----------
+     Tên sheet có ngày đặt "ASM-12-11-26" · cột BARCODE + cột SL · mã KH cố định ANHNHCM0001 */
+  function parseAnNhien(acct, wb, fileName) {
+    const out = [], skipped = [];
+    for (const sn of wb.SheetNames) {
+      const ws = wb.Sheets[sn];
+      if (!ws || !ws['!ref']) { skipped.push(`${sn} (trống)`); continue; }
+      const range = XLSXlib.utils.decode_range(ws['!ref']);
+      let hr = -1, cBc = -1, cQty = -1, cName = -1;
+      for (let r = range.s.r; r <= Math.min(range.e.r, range.s.r + 20) && hr < 0; r++) {
+        const H = []; for (let c = range.s.c; c <= Math.min(range.e.c, 40); c++) H[c] = fold(cellText(ws, r, c)).replace(/_/g, ' ').trim();
+        const b = H.findIndex(h => h && isBarcodeHeader(h));
+        const q = H.findIndex(h => h && /^(sl|so luong|sl dat|so luong dat)$/.test(h));
+        if (b >= 0 && q >= 0) { hr = r; cBc = b; cQty = q; cName = H.findIndex(h => h && /ten san pham|san pham|ten hang|vietnamese name/.test(h)); }
+      }
+      if (hr < 0) { skipped.push(`${sn} (không có cột SL)`); continue; }
+      const lines = [];
+      for (let r = hr + 1; r <= range.e.r; r++) {
+        const q = cellNum(ws, r, cQty);
+        if (q == null || q === 0) continue;
+        let bc = cellText(ws, r, cBc).replace(/\D/g, '');
+        const ln = { row: r + 1, barcode: bc, qty: q, name: cName >= 0 ? cellText(ws, r, cName) : '', flags: [] };
+        if (/^\d{11}$/.test(bc)) { ln.barcode = bc = '0' + bc; ln.flags.push({ level: 'info', msg: 'Đã thêm số 0 đầu (file gốc mất số 0)' }); }
+        if (Number.isNaN(q)) ln.flags.push({ level: 'err', msg: `Số lượng không phải số: "${cellText(ws, r, cQty)}"` });
+        else if (q < 0 || !Number.isInteger(q)) ln.flags.push({ level: 'err', msg: 'Số lượng âm hoặc lẻ thập phân' });
+        if (!bc) ln.flags.push({ level: 'err', msg: 'Thiếu barcode' });
+        else if (!/^\d{8}$|^\d{12,14}$/.test(bc)) ln.flags.push({ level: 'warn', msg: 'Barcode lạ (không phải 8/12/13/14 số)' });
+        else if (root.FFM_DMSP && !root.FFM_DMSP[bc.padStart(14, '0')]) ln.flags.push({ level: 'warn', msg: 'Barcode không có trong danh mục sản phẩm Hyperion (DMSP)' });
+        lines.push(ln);
+      }
+      if (!lines.length) { skipped.push(`${sn} (không có dòng nào có SL)`); continue; }
+      const seen = {};
+      lines.forEach(l => { if (l.barcode) { if (seen[l.barcode]) l.flags.push({ level: 'warn', msg: `Trùng barcode với dòng ${seen[l.barcode]}` }); else seen[l.barcode] = l.row; } });
+      const issues = [];
+      let orderDate = '';
+      const md = sn.match(/(\d{1,2})\s*[-.\/_]\s*(\d{1,2})\s*[-.\/_]\s*(\d{2,4})/);
+      if (md) { let y = +md[3]; if (y < 100) y += 2000; orderDate = `${y}-${md[2].padStart(2, '0')}-${md[1].padStart(2, '0')}`; }
+      else issues.push({ level: 'warn', msg: `Tên sheet "${sn}" không có ngày đặt (dạng 12-11-26); số đơn và ngày giao tính theo ô Ngày về đơn.` });
+      out.push({ prefix: acct.prefix, seq: acct.seq, abbr: '', noAbbr: true, poDate: orderDate, orderDate, customer: acct.fixedCustomer, store: sn, sheet: sn, lines, issues });
+    }
+    if (!out.length) return { error: `Không sheet nào có số lượng đặt hàng${skipped.length ? ' (' + skipped.join(', ') + ')' : ''}.` };
+    if (skipped.length) out[0].issues.push({ level: 'info', msg: `Bỏ qua sheet không phải đơn: ${skipped.join(', ')}.` });
+    if (out.length > 1) out.forEach(o => o.issues.push({ level: 'info', msg: `File có ${out.length} sheet đặt hàng → ${out.length} đơn riêng.` }));
+    return { multi: out };
+  }
+
   /* ---------- Account rules ---------- */
   const ACCOUNTS = {
     KKTC: {
@@ -956,6 +1002,16 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
       customers: [{"code": "SOIBIEN062", "name": "Sói Biển 62_Số 8 Vũ Thạnh"}, {"code": "SOIBIEN069", "name": "Sói Biển 69_54 Giang Văn Minh"}, {"code": "SOIBIEN076", "name": "Sói Biển 076_16 Xuân La"}, {"code": "SOIBIEN075", "name": "Sói Biển 075_33 Trần Nguyên Đán"}, {"code": "SOIBIEN060", "name": "Sói Biển 60_Ngõ 34 Hoàng Cầu"}, {"code": "SOIBIEN071", "name": "Sói Biển 71 - Số 41 đường Vạn Phúc"}, {"code": "SOIBIEN081", "name": "Sói Biển 080_TT6-01, KĐT mới Văn Phú"}, {"code": "SOIBIEN064", "name": "Sói biển 64_Số 178 Lò Đúc"}, {"code": "SOIBIEN061", "name": "Sói Biển 61_Số 44 Nguyễn Tuân"}, {"code": "SOIBIEN070", "name": "Sói Biển 70 _ Khu đoàn ngoại giao"}, {"code": "SOIBIEN077", "name": "Sói Biển 077_KHO 1 - Số 524 Minh Khai"}, {"code": "SOIBIEN078", "name": "Sói Biển 078_ số 162 Nguyễn Đồng Chi"}, {"code": "SOIBIEN001", "name": "Sói Biển 1_182 Hoàng Văn Thái"}, {"code": "SOIBIEN002", "name": "Sói Biển 2_Số 13B Phan Huy Chú"}, {"code": "SOIBIEN004", "name": "Sói Biển 4_Số 65 Trần Nhân Tông"}, {"code": "SOIBIEN005", "name": "Sói Biển 5_Shophouse 9"}, {"code": "SOIBIEN008", "name": "Sói Biển 8_Số 20 Núi Trúc"}, {"code": "SOIBIEN009", "name": "Sói Biển 9_Số 48 Trần Hưng Đạo"}, {"code": "SOIBIEN010", "name": "Sói Biển 10_Số 16 N7A Nguyễn Thị Thập"}, {"code": "SOIBIEN012", "name": "Sói Biển 12_Shop 1 - Park 11"}, {"code": "SOIBIEN013", "name": "Sói Biển 13_Số 145 Nguyễn Tuân"}, {"code": "SOIBIEN015", "name": "Sói Biển 15_Shophouse 3"}, {"code": "SOIBIEN016", "name": "Sói Biển 16_Số 65 Nguyên Hồng"}, {"code": "SOIBIEN017", "name": "Sói Biển 17_Số 48 Nguyễn Khuyến"}, {"code": "SOIBIEN018", "name": "Sói Biển 18_Số 78 Láng Hạ"}, {"code": "SOIBIEN020", "name": "Sói Biển 20_Số 203 Trung Kính"}, {"code": "SOIBIEN021", "name": "Sói Biển 21_Số 25 Xuân La"}, {"code": "SOIBIEN035", "name": "Sói Biển 35_Số 86D Khu Nhà Vườn"}, {"code": "SOIBIEN040", "name": "Sói Biển 40_Số 50 Lò Đúc"}, {"code": "SOIBIEN041", "name": "Sói Biển 41_116E3 Thái Thịnh"}, {"code": "SOIBIEN042", "name": "Sói Biển 42_52 Nguyễn Huy Tưởng"}, {"code": "SOIBIEN043", "name": "Sói Biển 43_163 Phố Đặng Tiến Đông"}, {"code": "SOIBIEN044", "name": "Sói Biển 44_12C Láng Hạ"}, {"code": "SOIBIEN045", "name": "Sói Biển 45_117 Phan Văn Trường"}, {"code": "SOIBIEN046", "name": "Sói Biển 46_43 Đỗ Quang"}, {"code": "SOIBIEN047", "name": "Sói Biển 47_16 Vũ Trọng Phụng"}, {"code": "SOIBIEN049", "name": "Sói Biển 49_52 Chiến Thắng"}, {"code": "SOIBIEN050", "name": "Sói Biển 50_150 Lê Trọng Tấn"}, {"code": "SOIBIEN048", "name": "Sói Biển 48_423 Minh Khai"}, {"code": "SOIBIEN052", "name": "Sói Biển 52_55 Ngụy Như Kon Tum"}, {"code": "SOIBIEN051", "name": "Sói Biển 51_142 Trần Bình"}, {"code": "SOIBIEN053", "name": "Sói Biển 53_44 Nguyễn Sơn"}, {"code": "SOIBIEN054", "name": "Sói Biển 54_Gh 01S11 Tòa S2.07"}, {"code": "SOIBIEN055", "name": "Sói Biển 55_Gh 01S10 Tòa S2.16"}, {"code": "SOIBIEN056", "name": "Sói Biển 56_Times City"}, {"code": "SOIBIEN057", "name": "Sói Biển 57_106 Hoàng Quốc Việt"}, {"code": "SOIBIEN058", "name": "Sói Biển 58_16 Đoàn Thị Điểm"}, {"code": "SOIBIEN059", "name": "Sói Biển 59_Số 9, B7 Lưu Hữu Phước"}, {"code": "SOIBIEN065", "name": "Sói Biển 65_36 Nguyễn Hoàng Tôn"}, {"code": "SOIBIEN072", "name": "Sói Biển 072_179 Trần Đăng Ninh"}, {"code": "SOIBIEN073", "name": "Sói Biển 073_Vinhomes Smart City"}, {"code": "SOIBIEN080", "name": "Sói Biển 080_VT3, BT7 Xa La"}, {"code": "SOIBIEN063", "name": "Sói biển 63_Số 189 Hoàng Hoa Thám"}, {"code": "SOIBIEN067", "name": "Sói Biển 67_ Mỗ Lao"}, {"code": "SOIBIEN066", "name": "Sói Biển 66_ Số 56 Nguyễn Khuyến"}, {"code": "SOIBIEN068", "name": "Sói Biển 68_Linh Lang"}, {"code": "SOIBIEN074", "name": "Sói Biển 074_DC_KHO 2 - Lô S3-8"}, {"code": "SOIBIEN079", "name": "Sói Biển 079_158 Phố Lạc Trung"}],
       // Số đơn: SOIBIEN + YYMMDD ngày đặt (in trên đơn) · đơn thứ 2 cùng ngày thêm -02
       parse(wb, fileName) { return parseSoiBien(this, wb, fileName || ''); }
+    }
+    ,
+    ANNHIEN: {
+      label: 'An Nhiên (ANNHIEN)', prefix: 'ANNHIEN', seq: 'always', noAbbr: true,
+      accept: '.xlsx,.xls',
+      leadDays: 4,
+      fixedCustomer: 'ANHNHCM0001', // anh Tài chốt: An Nhiên cố định mã KH này
+      customers: [{ code: 'ANHNHCM0001', name: 'ANNHIEN_237-239-241 Nguyễn Công Trứ' }],
+      // Số đơn: ANNHIEN + YYMMDD (ngày trong tên sheet) + -01, -02… (mỗi sheet 1 đơn)
+      parse(wb, fileName) { return parseAnNhien(this, wb, fileName || ''); }
     }
   };
 
@@ -1113,7 +1169,7 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
 (function (root) {
   const BASE = 'data/';
   const FILES = { dmkh: 'DMKH.xlsx', dmsp: 'DMSP.xlsx', map: 'Code chuyển đổi.xlsx', tpl: 'Form final.xlsx' };
-  const PREFIX = { KKTC: 'KKTC', MOR: 'MORGT', BRG: 'BRGMART', AEON: 'AEON', SOIBIEN: 'SOIBIEN' };
+  const PREFIX = { KKTC: 'KKTC', MOR: 'MORGT', BRG: 'BRGMART', AEON: 'AEON', SOIBIEN: 'SOIBIEN', ANNHIEN: 'ANHN' };
   const LABEL = { dmkh: 'DMKH', dmsp: 'DMSP', map: 'Code chuyển đổi', tpl: 'Form final' };
   const CACHE = 'ffm-data-v1:';
   // Google Apps Script: thống kê + bảng "Code AEON" team tự thêm
@@ -1383,8 +1439,7 @@ $('btnGo').addEventListener('click', async () => {
       let r;
       if (acct.async) r = await acct.parseFile(f, m => toast(`File ${i+1}/${files.length}: ${m}`), libs);
       else { const wb = XLSX.read(f.buf, { type: 'array', cellText: true }); r = acct.parse(wb, f.name); }
-      if (!r.error) r.acctKey = key;
-      out.push(Object.assign({ fileName: f.name }, r));
+      (r.multi || [r]).forEach(x => { if (!x.error) x.acctKey = key; out.push(Object.assign({ fileName: x.sheet ? `${f.name} · sheet ${x.sheet}` : f.name }, x)); });
     } catch (e) { out.push({ fileName: f.name, error: 'Không đọc được file: ' + (e && e.message || e) }); }
   }
   state.results = out;
@@ -1470,7 +1525,7 @@ $('addBtn').addEventListener('click', () => {
   $('addBc').value = ''; $('addPc').value = ''; acctNote();
 });
 // Mã KH: team tự thêm (chọn tay ở ô Mã khách hàng là tự lưu; hoặc thêm trong ô "+ Thêm mã khách hàng")
-const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/ };
+const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/, ANNHIEN: /^ANHN/ };
 function saveCust(acctKey, code, store){
   const list = (window.FFM_CUST_SHARED || []).filter(x => !(x.acct === acctKey && x.name.trim().toLowerCase() === store.trim().toLowerCase()));
   list.push({ acct: acctKey, code, name: store.trim() });
@@ -1612,7 +1667,7 @@ function card(r, idx){
       if (key==='abbr' || key==='poDate') recompute(false); render(); });
     return el('div', {}, el('label', {class:'k', for:id, text:label}), inp);
   };
-  f.append(el('div', {}, el('label',{class:'k',text: r.aeon ? 'Cửa hàng (trên đơn)' : r.fixedPo ? 'Nơi nhận (trên phiếu)' : r.source === 'image' ? 'Cửa hàng (tên file ảnh)' : 'Cửa hàng (ô tiêu đề)'}), el('div',{class:'ro',text:r.store || '—'})),
+  f.append(el('div', {}, el('label',{class:'k',text: r.aeon ? 'Cửa hàng (trên đơn)' : r.fixedPo ? 'Nơi nhận (trên phiếu)' : r.source === 'image' ? 'Cửa hàng (tên file ảnh)' : r.sheet ? 'Sheet' : 'Cửa hàng (ô tiêu đề)'}), el('div',{class:'ro',text:r.store || '—'})),
     r.fixedPo ? field('Số đơn (C9)', 'po', 'text') : r.noAbbr ? field('Ngày đặt (trên đơn)', 'poDate', 'date') : field('Viết tắt cửa hàng', 'abbr', 'text'), custSelect(), field('Ngày giao yêu cầu (C13)', 'delivery', 'date'));
   c.append(f);
 

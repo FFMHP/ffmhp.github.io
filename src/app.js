@@ -129,8 +129,7 @@ $('btnGo').addEventListener('click', async () => {
       let r;
       if (acct.async) r = await acct.parseFile(f, m => toast(`File ${i+1}/${files.length}: ${m}`), libs);
       else { const wb = XLSX.read(f.buf, { type: 'array', cellText: true }); r = acct.parse(wb, f.name); }
-      if (!r.error) r.acctKey = key;
-      out.push(Object.assign({ fileName: f.name }, r));
+      (r.multi || [r]).forEach(x => { if (!x.error) x.acctKey = key; out.push(Object.assign({ fileName: x.sheet ? `${f.name} · sheet ${x.sheet}` : f.name }, x)); });
     } catch (e) { out.push({ fileName: f.name, error: 'Không đọc được file: ' + (e && e.message || e) }); }
   }
   state.results = out;
@@ -216,7 +215,7 @@ $('addBtn').addEventListener('click', () => {
   $('addBc').value = ''; $('addPc').value = ''; acctNote();
 });
 // Mã KH: team tự thêm (chọn tay ở ô Mã khách hàng là tự lưu; hoặc thêm trong ô "+ Thêm mã khách hàng")
-const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/ };
+const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/, ANNHIEN: /^ANHN/ };
 function saveCust(acctKey, code, store){
   const list = (window.FFM_CUST_SHARED || []).filter(x => !(x.acct === acctKey && x.name.trim().toLowerCase() === store.trim().toLowerCase()));
   list.push({ acct: acctKey, code, name: store.trim() });
@@ -358,7 +357,7 @@ function card(r, idx){
       if (key==='abbr' || key==='poDate') recompute(false); render(); });
     return el('div', {}, el('label', {class:'k', for:id, text:label}), inp);
   };
-  f.append(el('div', {}, el('label',{class:'k',text: r.aeon ? 'Cửa hàng (trên đơn)' : r.fixedPo ? 'Nơi nhận (trên phiếu)' : r.source === 'image' ? 'Cửa hàng (tên file ảnh)' : 'Cửa hàng (ô tiêu đề)'}), el('div',{class:'ro',text:r.store || '—'})),
+  f.append(el('div', {}, el('label',{class:'k',text: r.aeon ? 'Cửa hàng (trên đơn)' : r.fixedPo ? 'Nơi nhận (trên phiếu)' : r.source === 'image' ? 'Cửa hàng (tên file ảnh)' : r.sheet ? 'Sheet' : 'Cửa hàng (ô tiêu đề)'}), el('div',{class:'ro',text:r.store || '—'})),
     r.fixedPo ? field('Số đơn (C9)', 'po', 'text') : r.noAbbr ? field('Ngày đặt (trên đơn)', 'poDate', 'date') : field('Viết tắt cửa hàng', 'abbr', 'text'), custSelect(), field('Ngày giao yêu cầu (C13)', 'delivery', 'date'));
   c.append(f);
 
