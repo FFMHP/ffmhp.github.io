@@ -34,3 +34,9 @@ Mã được lưu vào sheet **`Code AEON`** trong Google Sheet "FFM Chuyển Đ
 - Chỉ lưu được product code có trong DMSP.
 - File `data/Code chuyển đổi.xlsx` luôn được ưu tiên hơn bảng team thêm.
 - Muốn sửa hoặc xoá một mã team thêm sai: sửa hoặc xoá dòng đó trong sheet `Code AEON`.
+
+## Mã khách hàng do team tự thêm
+
+- Ở ô **Mã khách hàng (C10)** của một đơn, chọn tay cửa hàng khác với web dò ra (hoặc khi web không dò được) là **tự lưu**: tên cửa hàng trên đơn → mã KH. Lần sau gặp đúng tên đó web tự chọn.
+- Hoặc mở **"+ Thêm mã khách hàng"** dưới ô Account, nhập Mã KH + tên cửa hàng như ghi trên đơn (AEON: tên bắt đầu bằng mã cửa hàng, vd "1006 - AEON Hải Phòng").
+- Lưu ở sheet **`Mã KH`** trong Google Sheet "FFM Chuyển Đơn - Thống kê". Sửa / xoá dòng sai ngay trong sheet.

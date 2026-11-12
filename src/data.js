@@ -72,7 +72,7 @@
   }
 
   function apply(key, val) {
-    if (key === 'dmkh') for (const k in val) { const a = root.FFM.ACCOUNTS[k]; if (a && val[k].length) a.customers.splice(0, a.customers.length, ...val[k]); }
+    if (key === 'dmkh') { for (const k in val) { const a = root.FFM.ACCOUNTS[k]; if (a && val[k].length) a.customers.splice(0, a.customers.length, ...val[k]); } applyCust(); }
     if (key === 'dmsp') {
       const extra = root.FFM_PC_EXTRA || {};
       for (const k in extra) if (!val[k]) val[k] = extra[k];
@@ -95,18 +95,29 @@
     apply(key, val); status[key] = { src: 'web', at: st.mod, fresh: true };
   }
 
+  // Mã KH team thêm: gắn thêm vào danh sách cửa hàng của từng account (đánh dấu team)
+  function applyCust() {
+    const A = root.FFM && root.FFM.ACCOUNTS; if (!A) return;
+    for (const k in A) { const list = A[k].customers; for (let i = list.length - 1; i >= 0; i--) if (list[i].team) list.splice(i, 1); }
+    (root.FFM_CUST_SHARED || []).forEach(x => {
+      const a = A[x.acct]; if (!a) return;
+      if (!a.customers.some(c => c.code === x.code && norm(c.name).toLowerCase() === norm(x.name).toLowerCase())) a.customers.push({ code: x.code, name: x.name, team: true });
+    });
+  }
   // bảng Code AEON team thêm: không chặn quá 15 giây; tải xong muộn vẫn áp dụng
   let sharedP = null;
   function fetchShared() {
     return sharedP || (sharedP = fetch(API + '?t=aeonmap', { cache: 'no-store' }).then(r => r.json()).then(j => {
       if (!j || !j.map) throw new Error('bad');
       root.FFM_AEON_MAP_SHARED = j.map; lset('aeonShared', j.map); status.shared = { n: Object.keys(j.map).length };
+      root.FFM_CUST_SHARED = j.cust || []; lset('custShared', root.FFM_CUST_SHARED); applyCust();
       return true;
     }).catch(e => { sharedP = null; throw e; }));
   }
   async function loadShared() {
     if (!/^https:/.test(API)) return;
     const c = lget('aeonShared'); if (c) root.FFM_AEON_MAP_SHARED = c;
+    const cc = lget('custShared'); if (cc) { root.FFM_CUST_SHARED = cc; applyCust(); }
     const n0 = Object.keys(root.FFM_AEON_MAP_SHARED || {}).length;
     const timeout = new Promise(ok => setTimeout(() => ok('timeout'), 15000));
     const r = await Promise.race([fetchShared().catch(() => 'err'), timeout]);
@@ -118,13 +129,14 @@
 
   function summary() {
     const fmt = s => { if (!s) return 'đang tải…'; if (s.err) return 'lỗi, dùng bảng gắn sẵn'; if (s.src !== 'web') return 'bảng gắn sẵn'; if (!s.at) return 'từ web'; const d = new Date(s.at), p = n => String(n).padStart(2, '0'); return `cập nhật ${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`; };
-    const sh = status.shared ? ` · Code AEON team thêm: ${status.shared.n} mã${status.shared.err ? ' (chưa tải mới được)' : ''}` : '';
+    const nc = (root.FFM_CUST_SHARED || []).length;
+    const sh = status.shared ? ` · Code AEON team thêm: ${status.shared.n} mã · Mã KH team thêm: ${nc}${status.shared.err ? ' (chưa tải mới được)' : ''}` : '';
     return Object.keys(FILES).map(k => `${LABEL[k]}: ${fmt(status[k])}`).join(' · ') + sh;
   }
 
   root.FFM_DATA = {
     status, summary, parseDMKH, parseDMSP, parseMap,
-    loadShared,
+    loadShared, applyCust,
     ready: (location.protocol === 'file:' ? Promise.resolve() : Promise.all(Object.keys(FILES).map(k =>
       loadOne(k).catch(e => { console.warn('[FFM data]', k, e); status[k] = { src: 'gắn sẵn', err: String(e.message || e) }; })
     ).concat([loadShared()]))).then(() => { if (location.protocol === 'file:') Object.keys(FILES).forEach(k => status[k] = { src: 'gắn sẵn' }); })

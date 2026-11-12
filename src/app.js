@@ -204,6 +204,28 @@ $('addBtn').addEventListener('click', () => {
   $('addNote').textContent = `Đã lưu ${bc} → ${pc} (${hit[1]}).`;
   $('addBc').value = ''; $('addPc').value = ''; acctNote();
 });
+// Mã KH: team tự thêm (chọn tay ở ô Mã khách hàng là tự lưu; hoặc thêm trong ô "+ Thêm mã khách hàng")
+const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/ };
+function saveCust(acctKey, code, store){
+  const list = (window.FFM_CUST_SHARED || []).filter(x => !(x.acct === acctKey && x.name.trim().toLowerCase() === store.trim().toLowerCase()));
+  list.push({ acct: acctKey, code, name: store.trim() });
+  window.FFM_CUST_SHARED = list;
+  try { localStorage.setItem('ffm-data-v1:custShared', JSON.stringify(list)); } catch(e) {}
+  if (window.FFM_DATA) window.FFM_DATA.applyCust();
+  logEvent({ event:'Thêm mã KH', acct:acctKey, code, store: store.trim() });
+  dataNote(); acctNote();
+}
+$('cuBtn').addEventListener('click', () => {
+  const k = sel.value, code = $('cuCode').value.trim().toUpperCase(), name = $('cuName').value.trim();
+  if (!who.value.trim()) { $('cuNote').textContent = 'Nhập tên người làm trước.'; return; }
+  if (!CODE_PREFIX[k].test(code)) { $('cuNote').textContent = `Mã KH của account này phải bắt đầu bằng ${CODE_PREFIX[k].source.slice(1)}.`; return; }
+  if (name.length < 3) { $('cuNote').textContent = 'Nhập tên cửa hàng như ghi trên đơn.'; return; }
+  if (k === 'AEON' && !/^\d{3,5}\s*-/.test(name)) { $('cuNote').textContent = 'AEON: tên phải bắt đầu bằng mã cửa hàng, vd "1006 - AEON Hải Phòng".'; return; }
+  const inDmkh = ACCOUNTS[k].customers.some(c => c.code === code && !c.team);
+  saveCust(k, code, name);
+  $('cuNote').textContent = `Đã lưu: "${name}" → ${code}.` + (inDmkh ? '' : ' Lưu ý: mã này chưa có trong DMKH, kiểm tra đã tạo trên hệ thống chưa.');
+  $('cuCode').value = ''; $('cuName').value = '';
+});
 function saveAeonCode(l){
   if (!who.value.trim()) { toast('Nhập tên người làm trước.', 'err'); who.focus(); return; }
   const bc = l.barcode, pc = l.productCode;
@@ -286,11 +308,18 @@ function card(r, idx){
     const acct = ACCOUNTS[r.acctKey || sel.value], id = `f-${idx}-customer`;
     const s = el('select', {id});
     s.add(new Option('— chọn cửa hàng —', ''));
-    acct.customers.forEach(c => s.add(new Option(`${c.code} · ${c.name}`, c.code)));
+    const seen = new Set();
+    acct.customers.forEach(c => { if (seen.has(c.code)) return; seen.add(c.code); s.add(new Option(`${c.code} · ${c.name}${c.team ? ' (team thêm)' : ''}`, c.code)); });
     if (r.customer && !acct.customers.some(c => c.code === r.customer)) s.add(new Option(r.customer + ' · (ngoài DMKH)', r.customer));
     s.value = r.customer || '';
     if (r.demo) s.disabled = true;
-    s.addEventListener('change', () => { r.customer = s.value; const c = acct.customers.find(x => x.code === s.value); if (c && acct.makeAbbr && (!r.abbr || (acct.abbr && acct.abbr[c.code]))) r.abbr = acct.makeAbbr(c.name, c.code).abbr; recompute(false); render(); });
+    s.addEventListener('change', () => {
+      const k = r.acctKey || sel.value;
+      if (s.value && r.store && k !== 'AEON' && who.value.trim()) {
+        const m = window.FFM.matchCustomer(acct.customers, r.store, acct.brand);
+        if (!m.hit || m.hit.code !== s.value) { saveCust(k, s.value, r.store); toast(`Đã tự lưu: "${r.store}" → ${s.value}. Lần sau gặp tên này sẽ tự chọn.`, 'ok'); }
+      }
+      r.customer = s.value; const c = acct.customers.find(x => x.code === s.value && !x.team) || acct.customers.find(x => x.code === s.value); if (c && acct.makeAbbr && (!r.abbr || (acct.abbr && acct.abbr[c.code]))) r.abbr = acct.makeAbbr(c.name, c.code).abbr; recompute(false); render(); });
     return el('div', {}, el('label', {class:'k', for:id, text:'Mã khách hàng (C10)'}), s);
   };
   const field = (label, key, type) => {

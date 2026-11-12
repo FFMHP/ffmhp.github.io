@@ -5,7 +5,7 @@
       <p class="sub">Đổi đơn đặt hàng của khách sang form FORM_2_HP để up lên hệ thống. Xử lý ngay trên trình duyệt, file không gửi đi đâu.</p>
       <p class="note" id="dataNote" style="margin:6px 0 0"></p>
     </div>
-    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v24</span>
+    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v25</span>
   </header>
 
   <section class="panel controls" aria-label="Chọn file">
@@ -15,6 +15,15 @@
       <label class="k" for="acct">1 · Account</label>
       <select id="acct"></select>
       <p class="note" id="acctNote" style="margin:8px 0 0"></p>
+      <details id="custBox" style="margin-top:6px">
+        <summary class="note" style="cursor:pointer">+ Thêm mã khách hàng</summary>
+        <div style="display:grid;gap:6px;margin-top:6px">
+          <input type="text" id="cuCode" placeholder="Mã KH (vd KKTC0073)">
+          <input type="text" id="cuName" placeholder="Tên cửa hàng như ghi trên đơn">
+          <button type="button" id="cuBtn" class="small">Lưu vào bảng chung</button>
+          <p class="note" id="cuNote" style="margin:0"></p>
+        </div>
+      </details>
       <div id="mapBox" hidden style="margin-top:8px">
         <p class="note" id="mapNote" style="margin:0 0 6px"></p>
         <button type="button" id="mapBtn" class="small">Nạp bảng Code chuyển đổi</button>

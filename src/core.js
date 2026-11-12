@@ -33,6 +33,9 @@
     const k = key(name, brand); if (!k) return { hit: null };
     const exact = list.filter(c => key(c.name, brand) === k);
     if (exact.length === 1) return { hit: exact[0], exact: true };
+    // tên team đã gán tay trước đó được ưu tiên
+    const teamHit = exact.filter(c => c.team);
+    if (teamHit.length) return { hit: teamHit[teamHit.length - 1], exact: true };
     // tên trong DMKH nằm trọn trong tên trên file (vd "83 nguyen an ninh" chứa "nguyen an ninh") và chỉ có 1 cửa hàng như vậy
     const toks = new Set(k.split(' '));
     const sub = list.filter(c => { const ct = key(c.name, brand).split(' ').filter(Boolean); return ct.length >= 2 && ct.every(t => toks.has(t)); });
