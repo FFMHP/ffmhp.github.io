@@ -302,6 +302,74 @@
   /* ---------- AEON: PDF "STORE ORDER" (font không có bảng mã chữ -> phải nhận dạng) ----------
      Mỗi đoạn chữ trong PDF có vị trí chính xác. Công cụ vẽ trang thành ảnh nét, nhận dạng từng đoạn,
      rồi học bảng "mã ký tự -> chữ" từ chính file (bỏ phiếu) để giải mã lại toàn bộ cho chắc. */
+
+  /* ---------- KKTC: ảnh chụp màn hình bảng đơn Kmart ----------
+     Cột: Tên SP | Mã SP | Quy cách | Barcode | ĐVT | SL cái | Giá EA | Giá ĐV | SL ĐV
+     Đọc từng dòng từ phải sang trái: SL ĐV, Giá ĐV, Giá EA, SL cái, ĐVT, rồi barcode. SL điền form = SL ĐV × SL cái. */
+  const isInt = t => /^\d{1,5}$/.test(t);
+  const isMoney = t => /^\d{1,3}([.,]\d{3})+$|^\d{1,7}$/.test(t);
+  const money = t => Number(String(t).replace(/[.,]/g, ''));
+  function parseKktcTokens(toks) {
+    const t = toks.map(x => x.t.replace(/[|\[\]{}]/g, '')).filter(Boolean), w = toks.filter(x => x.t.replace(/[|\[\]{}]/g, ''));
+    let i = t.length - 1;
+    if (i < 4) return null;
+    const slDv = t[i], giaDv = t[i - 1], giaEa = t[i - 2], slCai = t[i - 3];
+    if (!isInt(slDv) || !isMoney(giaDv) || !isMoney(giaEa) || !isInt(slCai)) return null;
+    i -= 4;
+    let dvt = '';
+    if (i >= 0 && /^[A-Za-zĐđ]{1,6}$/.test(t[i])) { dvt = t[i]; i--; }
+    // barcode: ghép các cụm số liền nhau bên trái ĐVT (OCR hay chèn dấu cách giữa barcode)
+    let bc = '', bcWords = [], best = null;
+    for (let j = i; j >= 0 && j >= i - 3; j--) {
+      if (!/^\d+$/.test(t[j])) break;
+      bc = t[j] + bc; bcWords.unshift(w[j]);
+      if (bc.length > 14) break;
+      if (bc.length >= 8 && (!best || gtinOk(bc))) { best = { code: bc, words: bcWords.slice(), j }; if (gtinOk(bc)) break; }
+    }
+    if (!best) return null;
+    const rest = t.slice(0, best.j);
+    const kmCode = (rest.find(x => /^\d{6,8}$/.test(x)) || '');
+    const name = rest.slice(0, Math.max(0, rest.findIndex(x => /^\d{6,8}$/.test(x)))).join(' ');
+    return { barcode: best.code, bcWords: best.words, slDv: +slDv, giaDv: money(giaDv), giaEa: money(giaEa), slCai: +slCai, dvt, kmCode, name };
+  }
+
+  async function kktcImageParse(blob, onProgress, tessOpts) {
+    const img = await loadImage(blob);
+    const W = img.naturalWidth, H = img.naturalHeight;
+    const k = W < 1000 ? 3 : W < 1800 ? 2 : 1;
+    onProgress && onProgress('Đang tải bộ nhận dạng chữ (lần đầu cần internet)…');
+    const worker = await getWorker(tessOpts);
+    await worker.setParameters({ tessedit_char_whitelist: '', tessedit_pageseg_mode: '6', preserve_interword_spaces: '0' });
+    onProgress && onProgress('Đang đọc bảng hàng…');
+    const big = cropCanvas(img, { x0: 0, y0: 0, x1: W, y1: H }, k, 'gray');
+    const { data } = await worker.recognize(big);
+    const words = (data.words || []).map(x => ({ t: x.text, x0: x.bbox.x0 / k, y0: x.bbox.y0 / k, x1: x.bbox.x1 / k, y1: x.bbox.y1 / k }));
+    const { lines } = groupLines(words);
+    const hdr = lines.findIndex(L => L.words.some(x => /barcode/i.test(x.t)));
+    const rows = [];
+    let skipped = 0;
+    for (const L of lines.slice(hdr + 1)) {
+      const toks = L.words.slice().sort((a, b) => a.x0 - b.x0);
+      const p = parseKktcTokens(toks);
+      if (!p) { if (toks.some(x => /\d{6,}/.test(x.t))) skipped++; continue; }
+      const y0 = Math.max(0, Math.min(...toks.map(x => x.y0)) - 3), y1 = Math.min(H, Math.max(...toks.map(x => x.y1)) + 3);
+      let bcSure = gtinOk(p.barcode), bcGuessed = false;
+      if (!bcSure) {
+        // đọc lại riêng ô barcode, chỉ cho phép chữ số
+        const bx = { x0: Math.max(0, Math.min(...p.bcWords.map(x => x.x0)) - 4), x1: Math.min(W, Math.max(...p.bcWords.map(x => x.x1)) + 4), y0, y1 };
+        const reads = [];
+        for (const v of BC_VARIANTS.slice(0, 4)) reads.push(await readVar(worker, img, bx, '0123456789', v));
+        const pick = pickBarcode(reads);
+        if (pick.code && gtinOk(pick.code)) { p.barcode = pick.code; bcSure = !!pick.sure; bcGuessed = !pick.sure; }
+        await worker.setParameters({ tessedit_char_whitelist: '', tessedit_pageseg_mode: '6' });
+      }
+      const preview = cropCanvas(img, { x0: 0, x1: W, y0, y1 }, 1, 'none').toDataURL('image/png');
+      rows.push(Object.assign(p, { bcSure, bcGuessed, preview }));
+    }
+    if (!rows.length) return { error: 'Không đọc được dòng hàng nào. Ảnh có đủ các cột Barcode, ĐVT, SL cái, Giá EA, Giá ĐV, SL ĐV không?' };
+    return { rows, skipped, header: hdr >= 0 };
+  }
+
   async function aeonPdfParse(buf, onProgress, tessOpts) {
     const pdfjsLib = root.pdfjsLib;
     const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise;
@@ -379,6 +447,6 @@
   }
 
   root.__lastAeonItems = null;
-  const api = { aeonPdfParse, snapCatalog, pickBarcode, parseQty, gtinOk, parseNum, parseWords, pdfWords, imageParse, fold };
+  const api = { kktcImageParse, parseKktcTokens, aeonPdfParse, snapCatalog, pickBarcode, parseQty, gtinOk, parseNum, parseWords, pdfWords, imageParse, fold };
   if (typeof module !== 'undefined') module.exports = api; else root.FUJI = api;
 })(typeof window !== 'undefined' ? window : globalThis);

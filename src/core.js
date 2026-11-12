@@ -140,14 +140,41 @@
   const ACCOUNTS = {
     KKTC: {
       label: 'Kmart (KKTC)', prefix: 'KKTC', seq: 'always', brand: KKTC_BRAND,
-      accept: '.xlsx,.xls',
+      accept: '.xlsx,.xls,.jpg,.jpeg,.png', async: true,
       leadDays: 4, // ngày giao = ngày về đơn + 4 (10/11 -> 14/11)
       // DMKH: mã KH + Tên nội bộ (lọc từ DMKH.xlsx, 45 cửa hàng KKTC, Active)
       customers: [{"code": "KKTC0064", "name": "K-Market 126 Nguyễn Cao - Bắc Ninh"}, {"code": "KKTC0068", "name": "K-MARKET SMART CITY"}, {"code": "KKTC0041", "name": "Kmart The Emerald"}, {"code": "KKTC0056", "name": "KKTC_ Mỹ Đình Pearl"}, {"code": "KKTC0067", "name": "K-MARKET 117 TRẦN DUY HƯNG"}, {"code": "KKTC0050", "name": "K-Market West Point"}, {"code": "KKTC0072", "name": "K MARTKET LONG BIÊN- Vinhome Symphony"}, {"code": "KKTC0036", "name": "Kmarket Ecopark"}, {"code": "KKTC0053", "name": "KKTC_S3 Shunshine City"}, {"code": "KKTC0043", "name": "K-Market Vinhomes Skylake S3"}, {"code": "KKTC0042", "name": "K-Market Thăng Long Number"}, {"code": "KKTC0052", "name": "KKTC_Dcapitale C6"}, {"code": "KKTC0062", "name": "K-Market Green Bay - Hạ Long - Quảng Ninh"}, {"code": "KKTC0063", "name": "K-Market Chelsea House - Văn Cao - Hải Phòng"}, {"code": "KKTC0057", "name": "KKTC_K-Market Vinhome Bắc Ninh"}, {"code": "KKTC0069", "name": "K-MARKET KTX SAMSUNG"}, {"code": "KKTC0013", "name": "Kmart Trung Hòa"}, {"code": "KKTC0014", "name": "Kmart Calidas"}, {"code": "KKTC0015", "name": "Kmart CipuTra"}, {"code": "KKTC0016", "name": "Kmart Long Biên"}, {"code": "KKTC0017", "name": "Kmart Royal City R1"}, {"code": "KKTC0023", "name": "Kmart Goldmart Ruby"}, {"code": "KKTC0025", "name": "Kmart Quang Minh"}, {"code": "KKTC0028", "name": "Kmart ciputra 2"}, {"code": "KKTC0051", "name": "KKTC_ Phạm văn Đồng"}, {"code": "KKTC0058", "name": "K-market 148 Xuân Diệu"}, {"code": "KKTC0066", "name": "K-MARKET 88 LÊ QUANG ĐẠO - ĐÀ NẴNG"}, {"code": "KKTC0059", "name": "K-MARKET VÕ NGUYÊN GIÁP- ĐÀ NẴNG"}, {"code": "KKTC0071", "name": "K-market CT9 Mỹ Đình"}, {"code": "KKTC0065", "name": "K-Market Dự án The Minato Residence - Hải Phòng"}, {"code": "KKTC0047", "name": "K-Market Việt Long Bắc Ninh"}, {"code": "KKTC0034", "name": "Kmarket D-Capitale"}, {"code": "KKTC0060", "name": "K-Market 342 Ngọc Hân Công Chúa - Bắc Ninh"}, {"code": "KKTC0002", "name": "Kmart Keangnam"}, {"code": "KKTC0003", "name": "Kmart Mỹ Đình"}, {"code": "KKTC0004", "name": "Kmart 17T3"}, {"code": "KKTC0005", "name": "Kmart Golden"}, {"code": "KKTC0007", "name": "Kmart Gardenia"}, {"code": "KKTC0008", "name": "Goldmak saphia"}, {"code": "KKTC0012", "name": "Kmarket Greenbay"}, {"code": "KKTC0039", "name": "K-market MONARCHY ĐÀ NẴNG"}, {"code": "KKTC0031", "name": "Kmart Vinhome Sky Lake"}, {"code": "KKTC0061", "name": "K-Market The Matrix One"}, {"code": "KKTC0049", "name": "K-Market Starlake Tây Hồ"}, {"code": "KKTC0055", "name": "KKTC_ TT4 - Mỹ Đình 1"}],
       // Số đơn: KKTC + 6 ký tự đầu tên cửa hàng (bỏ Kmart, bỏ "The", bỏ dấu) + YYMMDD + -01/-02
       makeAbbr(store) { return { abbr: key(store, KKTC_BRAND).split(' ').filter(w => w && w !== 'the').join('').toUpperCase().slice(0, 6) }; },
-      parse(wb) { return parseStoreColumn(this, wb); }
+      parse(wb) { return parseStoreColumn(this, wb); },
+      async parseFile(f, onProgress, libs) {
+        if (!/\.(jpe?g|png)$/i.test(f.name)) return parseStoreColumn(this, XLSXlib.read(f.buf, { type: 'array', cellText: true }));
+        // Ảnh chụp bảng đơn: không có tên cửa hàng -> lấy theo tên file, vẫn cho chọn tay
+        try { await libs.ocr(); } catch (e) { return { error: 'Không tải được bộ nhận dạng chữ (cần internet lần đầu).' }; }
+        let res;
+        try { res = await root.FUJI.kktcImageParse(new Blob([f.buf]), onProgress, libs.tessOpts); }
+        catch (e) { return { error: 'Không đọc được ảnh: ' + (e && e.message || e) }; }
+        if (res.error) return { error: res.error };
+        const issues = [];
+        const fnStore = norm(f.name).replace(/\.[a-z]+$/i, '').replace(/^\s*20\d\d[.\-_]\d{1,2}[.\-_]\d{1,2}\s*-?\s*/, '').replace(/^((anh|ảnh)( dán| dan)?|image|screenshot|img)[\s_-]*\d*$/i, '').trim();
+        const m = fnStore ? matchCustomer(this.customers, fnStore, this.brand) : { hit: null };
+        const customer = m.hit ? m.hit.code : '';
+        const abbr = m.hit ? (this.makeAbbr(fnStore).abbr || this.makeAbbr(m.hit.name).abbr) : '';
+        if (!m.hit) issues.push({ key: 'customer', level: 'err', msg: fnStore ? `Không dò được cửa hàng "${fnStore}" (tên file) trong DMKH. Chọn cửa hàng ở ô Mã khách hàng.` : 'Ảnh không có tên cửa hàng. Chọn cửa hàng ở ô Mã khách hàng (hoặc đặt tên file ảnh theo tên cửa hàng).' });
+        else if (!m.exact) issues.push({ level: 'warn', msg: `Khớp gần đúng theo tên file: "${fnStore}" → ${m.hit.code} · ${m.hit.name}. Kiểm tra lại.` });
+        const lines = res.rows.map((x, i) => {
+          const l = validateFuji({ row: i + 1, barcode: x.barcode, qty: x.slDv * x.slCai, preview: x.preview, bcState: x.bcSure ? 'sure' : x.bcGuessed ? 'guess' : 'weak' });
+          l.flags = l.flags.filter(g => !/đơn giá\/thành tiền/.test(g.msg));
+          if (x.slCai !== 1) l.flags.push({ level: 'info', msg: `SL = ${x.slDv} ĐV × ${x.slCai} cái` });
+          if (Math.abs(x.giaEa * x.slCai - x.giaDv) > 2) l.flags.push({ level: 'warn', msg: `Giá ĐV (${x.giaDv.toLocaleString('vi-VN')}) ≠ Giá EA × SL cái: có thể đọc lệch SL cái hoặc số lượng. So với ảnh dòng.` });
+          return l;
+        });
+        if (res.skipped) issues.push({ level: 'warn', msg: `Có ${res.skipped} dòng trong ảnh không đọc được đủ cột. So ảnh với bảng bên dưới xem có thiếu dòng không.` });
+        issues.push({ level: 'info', msg: `Đọc từ ảnh: ${lines.length} dòng. SL = SL ĐV × SL cái. Ô đỏ là đọc nhầm: sửa trực tiếp rồi bấm Enter.` });
+        return { prefix: this.prefix, seq: this.seq, abbr, customer, store: fnStore, lines, issues, editable: true, source: 'image' };
+      }
     },
+
     MOR: {
       label: 'Morgant (MORGT)', prefix: 'MOR', seq: 'dup', brand: /^(morgt|morgant)\b\s*/,
       accept: '.xlsx,.xls',

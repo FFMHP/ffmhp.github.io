@@ -93,7 +93,7 @@ select.cell{font-family:var(--f-body);min-width:16ch}
       <p class="sub">Đổi đơn đặt hàng của khách sang form FORM_2_HP để up lên hệ thống. Xử lý ngay trên trình duyệt, file không gửi đi đâu.</p>
       <p class="note" id="dataNote" style="margin:6px 0 0"></p>
     </div>
-    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v26</span>
+    <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 12/11/2026 · v27</span>
   </header>
 
   <section class="panel controls" aria-label="Chọn file">
@@ -135,7 +135,7 @@ select.cell{font-family:var(--f-body);min-width:16ch}
     <div style="min-width:0">
       <label class="k" for="fileIn">2 · File gốc</label>
       <div class="drop" id="drop" tabindex="0" role="button" aria-label="Chọn hoặc kéo thả file gốc">
-        <div><b>Kéo thả file vào đây</b><small>hoặc bấm để chọn · được chọn nhiều file cùng lúc</small></div>
+        <div><b>Kéo thả file vào đây</b><small>hoặc bấm để chọn · được chọn nhiều file cùng lúc · có thể dán ảnh (Ctrl+V)</small></div>
       </div>
       <input type="file" id="fileIn" multiple hidden>
       <div class="files" id="fileList"></div>
@@ -472,6 +472,74 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
   /* ---------- AEON: PDF "STORE ORDER" (font không có bảng mã chữ -> phải nhận dạng) ----------
      Mỗi đoạn chữ trong PDF có vị trí chính xác. Công cụ vẽ trang thành ảnh nét, nhận dạng từng đoạn,
      rồi học bảng "mã ký tự -> chữ" từ chính file (bỏ phiếu) để giải mã lại toàn bộ cho chắc. */
+
+  /* ---------- KKTC: ảnh chụp màn hình bảng đơn Kmart ----------
+     Cột: Tên SP | Mã SP | Quy cách | Barcode | ĐVT | SL cái | Giá EA | Giá ĐV | SL ĐV
+     Đọc từng dòng từ phải sang trái: SL ĐV, Giá ĐV, Giá EA, SL cái, ĐVT, rồi barcode. SL điền form = SL ĐV × SL cái. */
+  const isInt = t => /^\d{1,5}$/.test(t);
+  const isMoney = t => /^\d{1,3}([.,]\d{3})+$|^\d{1,7}$/.test(t);
+  const money = t => Number(String(t).replace(/[.,]/g, ''));
+  function parseKktcTokens(toks) {
+    const t = toks.map(x => x.t.replace(/[|\[\]{}]/g, '')).filter(Boolean), w = toks.filter(x => x.t.replace(/[|\[\]{}]/g, ''));
+    let i = t.length - 1;
+    if (i < 4) return null;
+    const slDv = t[i], giaDv = t[i - 1], giaEa = t[i - 2], slCai = t[i - 3];
+    if (!isInt(slDv) || !isMoney(giaDv) || !isMoney(giaEa) || !isInt(slCai)) return null;
+    i -= 4;
+    let dvt = '';
+    if (i >= 0 && /^[A-Za-zĐđ]{1,6}$/.test(t[i])) { dvt = t[i]; i--; }
+    // barcode: ghép các cụm số liền nhau bên trái ĐVT (OCR hay chèn dấu cách giữa barcode)
+    let bc = '', bcWords = [], best = null;
+    for (let j = i; j >= 0 && j >= i - 3; j--) {
+      if (!/^\d+$/.test(t[j])) break;
+      bc = t[j] + bc; bcWords.unshift(w[j]);
+      if (bc.length > 14) break;
+      if (bc.length >= 8 && (!best || gtinOk(bc))) { best = { code: bc, words: bcWords.slice(), j }; if (gtinOk(bc)) break; }
+    }
+    if (!best) return null;
+    const rest = t.slice(0, best.j);
+    const kmCode = (rest.find(x => /^\d{6,8}$/.test(x)) || '');
+    const name = rest.slice(0, Math.max(0, rest.findIndex(x => /^\d{6,8}$/.test(x)))).join(' ');
+    return { barcode: best.code, bcWords: best.words, slDv: +slDv, giaDv: money(giaDv), giaEa: money(giaEa), slCai: +slCai, dvt, kmCode, name };
+  }
+
+  async function kktcImageParse(blob, onProgress, tessOpts) {
+    const img = await loadImage(blob);
+    const W = img.naturalWidth, H = img.naturalHeight;
+    const k = W < 1000 ? 3 : W < 1800 ? 2 : 1;
+    onProgress && onProgress('Đang tải bộ nhận dạng chữ (lần đầu cần internet)…');
+    const worker = await getWorker(tessOpts);
+    await worker.setParameters({ tessedit_char_whitelist: '', tessedit_pageseg_mode: '6', preserve_interword_spaces: '0' });
+    onProgress && onProgress('Đang đọc bảng hàng…');
+    const big = cropCanvas(img, { x0: 0, y0: 0, x1: W, y1: H }, k, 'gray');
+    const { data } = await worker.recognize(big);
+    const words = (data.words || []).map(x => ({ t: x.text, x0: x.bbox.x0 / k, y0: x.bbox.y0 / k, x1: x.bbox.x1 / k, y1: x.bbox.y1 / k }));
+    const { lines } = groupLines(words);
+    const hdr = lines.findIndex(L => L.words.some(x => /barcode/i.test(x.t)));
+    const rows = [];
+    let skipped = 0;
+    for (const L of lines.slice(hdr + 1)) {
+      const toks = L.words.slice().sort((a, b) => a.x0 - b.x0);
+      const p = parseKktcTokens(toks);
+      if (!p) { if (toks.some(x => /\d{6,}/.test(x.t))) skipped++; continue; }
+      const y0 = Math.max(0, Math.min(...toks.map(x => x.y0)) - 3), y1 = Math.min(H, Math.max(...toks.map(x => x.y1)) + 3);
+      let bcSure = gtinOk(p.barcode), bcGuessed = false;
+      if (!bcSure) {
+        // đọc lại riêng ô barcode, chỉ cho phép chữ số
+        const bx = { x0: Math.max(0, Math.min(...p.bcWords.map(x => x.x0)) - 4), x1: Math.min(W, Math.max(...p.bcWords.map(x => x.x1)) + 4), y0, y1 };
+        const reads = [];
+        for (const v of BC_VARIANTS.slice(0, 4)) reads.push(await readVar(worker, img, bx, '0123456789', v));
+        const pick = pickBarcode(reads);
+        if (pick.code && gtinOk(pick.code)) { p.barcode = pick.code; bcSure = !!pick.sure; bcGuessed = !pick.sure; }
+        await worker.setParameters({ tessedit_char_whitelist: '', tessedit_pageseg_mode: '6' });
+      }
+      const preview = cropCanvas(img, { x0: 0, x1: W, y0, y1 }, 1, 'none').toDataURL('image/png');
+      rows.push(Object.assign(p, { bcSure, bcGuessed, preview }));
+    }
+    if (!rows.length) return { error: 'Không đọc được dòng hàng nào. Ảnh có đủ các cột Barcode, ĐVT, SL cái, Giá EA, Giá ĐV, SL ĐV không?' };
+    return { rows, skipped, header: hdr >= 0 };
+  }
+
   async function aeonPdfParse(buf, onProgress, tessOpts) {
     const pdfjsLib = root.pdfjsLib;
     const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise;
@@ -549,7 +617,7 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
   }
 
   root.__lastAeonItems = null;
-  const api = { aeonPdfParse, snapCatalog, pickBarcode, parseQty, gtinOk, parseNum, parseWords, pdfWords, imageParse, fold };
+  const api = { kktcImageParse, parseKktcTokens, aeonPdfParse, snapCatalog, pickBarcode, parseQty, gtinOk, parseNum, parseWords, pdfWords, imageParse, fold };
   if (typeof module !== 'undefined') module.exports = api; else root.FUJI = api;
 })(typeof window !== 'undefined' ? window : globalThis);
 </script><script>
@@ -695,14 +763,41 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
   const ACCOUNTS = {
     KKTC: {
       label: 'Kmart (KKTC)', prefix: 'KKTC', seq: 'always', brand: KKTC_BRAND,
-      accept: '.xlsx,.xls',
+      accept: '.xlsx,.xls,.jpg,.jpeg,.png', async: true,
       leadDays: 4, // ngày giao = ngày về đơn + 4 (10/11 -> 14/11)
       // DMKH: mã KH + Tên nội bộ (lọc từ DMKH.xlsx, 45 cửa hàng KKTC, Active)
       customers: [{"code": "KKTC0064", "name": "K-Market 126 Nguyễn Cao - Bắc Ninh"}, {"code": "KKTC0068", "name": "K-MARKET SMART CITY"}, {"code": "KKTC0041", "name": "Kmart The Emerald"}, {"code": "KKTC0056", "name": "KKTC_ Mỹ Đình Pearl"}, {"code": "KKTC0067", "name": "K-MARKET 117 TRẦN DUY HƯNG"}, {"code": "KKTC0050", "name": "K-Market West Point"}, {"code": "KKTC0072", "name": "K MARTKET LONG BIÊN- Vinhome Symphony"}, {"code": "KKTC0036", "name": "Kmarket Ecopark"}, {"code": "KKTC0053", "name": "KKTC_S3 Shunshine City"}, {"code": "KKTC0043", "name": "K-Market Vinhomes Skylake S3"}, {"code": "KKTC0042", "name": "K-Market Thăng Long Number"}, {"code": "KKTC0052", "name": "KKTC_Dcapitale C6"}, {"code": "KKTC0062", "name": "K-Market Green Bay - Hạ Long - Quảng Ninh"}, {"code": "KKTC0063", "name": "K-Market Chelsea House - Văn Cao - Hải Phòng"}, {"code": "KKTC0057", "name": "KKTC_K-Market Vinhome Bắc Ninh"}, {"code": "KKTC0069", "name": "K-MARKET KTX SAMSUNG"}, {"code": "KKTC0013", "name": "Kmart Trung Hòa"}, {"code": "KKTC0014", "name": "Kmart Calidas"}, {"code": "KKTC0015", "name": "Kmart CipuTra"}, {"code": "KKTC0016", "name": "Kmart Long Biên"}, {"code": "KKTC0017", "name": "Kmart Royal City R1"}, {"code": "KKTC0023", "name": "Kmart Goldmart Ruby"}, {"code": "KKTC0025", "name": "Kmart Quang Minh"}, {"code": "KKTC0028", "name": "Kmart ciputra 2"}, {"code": "KKTC0051", "name": "KKTC_ Phạm văn Đồng"}, {"code": "KKTC0058", "name": "K-market 148 Xuân Diệu"}, {"code": "KKTC0066", "name": "K-MARKET 88 LÊ QUANG ĐẠO - ĐÀ NẴNG"}, {"code": "KKTC0059", "name": "K-MARKET VÕ NGUYÊN GIÁP- ĐÀ NẴNG"}, {"code": "KKTC0071", "name": "K-market CT9 Mỹ Đình"}, {"code": "KKTC0065", "name": "K-Market Dự án The Minato Residence - Hải Phòng"}, {"code": "KKTC0047", "name": "K-Market Việt Long Bắc Ninh"}, {"code": "KKTC0034", "name": "Kmarket D-Capitale"}, {"code": "KKTC0060", "name": "K-Market 342 Ngọc Hân Công Chúa - Bắc Ninh"}, {"code": "KKTC0002", "name": "Kmart Keangnam"}, {"code": "KKTC0003", "name": "Kmart Mỹ Đình"}, {"code": "KKTC0004", "name": "Kmart 17T3"}, {"code": "KKTC0005", "name": "Kmart Golden"}, {"code": "KKTC0007", "name": "Kmart Gardenia"}, {"code": "KKTC0008", "name": "Goldmak saphia"}, {"code": "KKTC0012", "name": "Kmarket Greenbay"}, {"code": "KKTC0039", "name": "K-market MONARCHY ĐÀ NẴNG"}, {"code": "KKTC0031", "name": "Kmart Vinhome Sky Lake"}, {"code": "KKTC0061", "name": "K-Market The Matrix One"}, {"code": "KKTC0049", "name": "K-Market Starlake Tây Hồ"}, {"code": "KKTC0055", "name": "KKTC_ TT4 - Mỹ Đình 1"}],
       // Số đơn: KKTC + 6 ký tự đầu tên cửa hàng (bỏ Kmart, bỏ "The", bỏ dấu) + YYMMDD + -01/-02
       makeAbbr(store) { return { abbr: key(store, KKTC_BRAND).split(' ').filter(w => w && w !== 'the').join('').toUpperCase().slice(0, 6) }; },
-      parse(wb) { return parseStoreColumn(this, wb); }
+      parse(wb) { return parseStoreColumn(this, wb); },
+      async parseFile(f, onProgress, libs) {
+        if (!/\.(jpe?g|png)$/i.test(f.name)) return parseStoreColumn(this, XLSXlib.read(f.buf, { type: 'array', cellText: true }));
+        // Ảnh chụp bảng đơn: không có tên cửa hàng -> lấy theo tên file, vẫn cho chọn tay
+        try { await libs.ocr(); } catch (e) { return { error: 'Không tải được bộ nhận dạng chữ (cần internet lần đầu).' }; }
+        let res;
+        try { res = await root.FUJI.kktcImageParse(new Blob([f.buf]), onProgress, libs.tessOpts); }
+        catch (e) { return { error: 'Không đọc được ảnh: ' + (e && e.message || e) }; }
+        if (res.error) return { error: res.error };
+        const issues = [];
+        const fnStore = norm(f.name).replace(/\.[a-z]+$/i, '').replace(/^\s*20\d\d[.\-_]\d{1,2}[.\-_]\d{1,2}\s*-?\s*/, '').replace(/^((anh|ảnh)( dán| dan)?|image|screenshot|img)[\s_-]*\d*$/i, '').trim();
+        const m = fnStore ? matchCustomer(this.customers, fnStore, this.brand) : { hit: null };
+        const customer = m.hit ? m.hit.code : '';
+        const abbr = m.hit ? (this.makeAbbr(fnStore).abbr || this.makeAbbr(m.hit.name).abbr) : '';
+        if (!m.hit) issues.push({ key: 'customer', level: 'err', msg: fnStore ? `Không dò được cửa hàng "${fnStore}" (tên file) trong DMKH. Chọn cửa hàng ở ô Mã khách hàng.` : 'Ảnh không có tên cửa hàng. Chọn cửa hàng ở ô Mã khách hàng (hoặc đặt tên file ảnh theo tên cửa hàng).' });
+        else if (!m.exact) issues.push({ level: 'warn', msg: `Khớp gần đúng theo tên file: "${fnStore}" → ${m.hit.code} · ${m.hit.name}. Kiểm tra lại.` });
+        const lines = res.rows.map((x, i) => {
+          const l = validateFuji({ row: i + 1, barcode: x.barcode, qty: x.slDv * x.slCai, preview: x.preview, bcState: x.bcSure ? 'sure' : x.bcGuessed ? 'guess' : 'weak' });
+          l.flags = l.flags.filter(g => !/đơn giá\/thành tiền/.test(g.msg));
+          if (x.slCai !== 1) l.flags.push({ level: 'info', msg: `SL = ${x.slDv} ĐV × ${x.slCai} cái` });
+          if (Math.abs(x.giaEa * x.slCai - x.giaDv) > 2) l.flags.push({ level: 'warn', msg: `Giá ĐV (${x.giaDv.toLocaleString('vi-VN')}) ≠ Giá EA × SL cái: có thể đọc lệch SL cái hoặc số lượng. So với ảnh dòng.` });
+          return l;
+        });
+        if (res.skipped) issues.push({ level: 'warn', msg: `Có ${res.skipped} dòng trong ảnh không đọc được đủ cột. So ảnh với bảng bên dưới xem có thiếu dòng không.` });
+        issues.push({ level: 'info', msg: `Đọc từ ảnh: ${lines.length} dòng. SL = SL ĐV × SL cái. Ô đỏ là đọc nhầm: sửa trực tiếp rồi bấm Enter.` });
+        return { prefix: this.prefix, seq: this.seq, abbr, customer, store: fnStore, lines, issues, editable: true, source: 'image' };
+      }
     },
+
     MOR: {
       label: 'Morgant (MORGT)', prefix: 'MOR', seq: 'dup', brand: /^(morgt|morgant)\b\s*/,
       accept: '.xlsx,.xls',
@@ -1173,6 +1268,17 @@ async function addFiles(fl){
   $('btnGo').disabled = !state.files.length;
 }
 
+// dán ảnh chụp màn hình (Ctrl+V) thẳng vào trang
+let pasteN = 0;
+document.addEventListener('paste', e => {
+  if (/^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '')) return;
+  const imgs = Array.from((e.clipboardData && e.clipboardData.files) || []).filter(f => /^image\//.test(f.type));
+  if (!imgs.length) return;
+  e.preventDefault();
+  addFiles(imgs.map(f => new File([f], `ảnh dán ${++pasteN}.png`, { type: f.type })));
+  toast(`Đã dán ${imgs.length} ảnh. Ảnh dán không có tên cửa hàng: sau khi chuyển đổi, chọn cửa hàng ở ô Mã khách hàng.`, 'ok');
+});
+
 const who = $('who');
 try { who.value = localStorage.getItem('ffm-user') || ''; } catch(e) {}
 who.addEventListener('change', () => { who.value = who.value.trim(); try { localStorage.setItem('ffm-user', who.value); } catch(e) {} });
@@ -1409,7 +1515,7 @@ function card(r, idx){
     inp.addEventListener('change', () => { r[key] = type==='text' ? inp.value.trim().toUpperCase() : inp.value; if (key==='abbr') recompute(false); render(); });
     return el('div', {}, el('label', {class:'k', for:id, text:label}), inp);
   };
-  f.append(el('div', {}, el('label',{class:'k',text: r.aeon ? 'Cửa hàng (trên đơn)' : r.fixedPo ? 'Nơi nhận (trên phiếu)' : 'Cửa hàng (ô tiêu đề)'}), el('div',{class:'ro',text:r.store || '—'})),
+  f.append(el('div', {}, el('label',{class:'k',text: r.aeon ? 'Cửa hàng (trên đơn)' : r.fixedPo ? 'Nơi nhận (trên phiếu)' : r.source === 'image' ? 'Cửa hàng (tên file ảnh)' : 'Cửa hàng (ô tiêu đề)'}), el('div',{class:'ro',text:r.store || '—'})),
     r.fixedPo ? field('Số đơn (C9)', 'po', 'text') : field('Viết tắt cửa hàng', 'abbr', 'text'), custSelect(), field('Ngày giao yêu cầu (C13)', 'delivery', 'date'));
   c.append(f);
 

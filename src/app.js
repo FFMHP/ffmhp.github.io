@@ -93,6 +93,17 @@ async function addFiles(fl){
   $('btnGo').disabled = !state.files.length;
 }
 
+// dán ảnh chụp màn hình (Ctrl+V) thẳng vào trang
+let pasteN = 0;
+document.addEventListener('paste', e => {
+  if (/^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '')) return;
+  const imgs = Array.from((e.clipboardData && e.clipboardData.files) || []).filter(f => /^image\//.test(f.type));
+  if (!imgs.length) return;
+  e.preventDefault();
+  addFiles(imgs.map(f => new File([f], `ảnh dán ${++pasteN}.png`, { type: f.type })));
+  toast(`Đã dán ${imgs.length} ảnh. Ảnh dán không có tên cửa hàng: sau khi chuyển đổi, chọn cửa hàng ở ô Mã khách hàng.`, 'ok');
+});
+
 const who = $('who');
 try { who.value = localStorage.getItem('ffm-user') || ''; } catch(e) {}
 who.addEventListener('change', () => { who.value = who.value.trim(); try { localStorage.setItem('ffm-user', who.value); } catch(e) {} });
@@ -329,7 +340,7 @@ function card(r, idx){
     inp.addEventListener('change', () => { r[key] = type==='text' ? inp.value.trim().toUpperCase() : inp.value; if (key==='abbr') recompute(false); render(); });
     return el('div', {}, el('label', {class:'k', for:id, text:label}), inp);
   };
-  f.append(el('div', {}, el('label',{class:'k',text: r.aeon ? 'Cửa hàng (trên đơn)' : r.fixedPo ? 'Nơi nhận (trên phiếu)' : 'Cửa hàng (ô tiêu đề)'}), el('div',{class:'ro',text:r.store || '—'})),
+  f.append(el('div', {}, el('label',{class:'k',text: r.aeon ? 'Cửa hàng (trên đơn)' : r.fixedPo ? 'Nơi nhận (trên phiếu)' : r.source === 'image' ? 'Cửa hàng (tên file ảnh)' : 'Cửa hàng (ô tiêu đề)'}), el('div',{class:'ro',text:r.store || '—'})),
     r.fixedPo ? field('Số đơn (C9)', 'po', 'text') : field('Viết tắt cửa hàng', 'abbr', 'text'), custSelect(), field('Ngày giao yêu cầu (C13)', 'delivery', 'date'));
   c.append(f);
 
