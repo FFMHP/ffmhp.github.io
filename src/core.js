@@ -84,19 +84,25 @@
         if (isBarcodeHeader(cellText(ws, r, c))) { hr = r; colCode = c; break; }
     if (hr < 0) return { error: `Không tìm thấy cột "Code"/"Barcode" ở dòng tiêu đề. File này có đúng mẫu đơn ${acct.label} không?` };
     let colName = -1, colPrice = -1, colCust = -1, colStt = -1, store = '', customer = '';
+    const skip = []; // cột giá / thành tiền / ĐVT... không phải cột số lượng
     for (let c = range.s.c; c <= Math.min(range.e.c, 30); c++) {
       const h = cellText(ws, hr, c), l = low(h);
       if (!h || c === colCode) continue;
       if (['stt', 'no', 'no.', '#'].includes(l)) colStt = c;
       else if (l.startsWith('tên') || l.includes('name')) colName = c;
-      else if (l === 'giá' || l === 'price') colPrice = c;
+      else if (/(^|\s|\()(đơn giá|giá|price|thành tiền|amount|vat|đvt|unit|quy cách|tổng)(\s|\)|$)/.test(l) || l.startsWith('giá') || l.startsWith('đơn giá') || l.startsWith('thành tiền')) { colPrice = colPrice < 0 ? c : colPrice; skip.push(c); }
       else if (/^[A-Z]{3,}\d{3,}$/.test(h.toUpperCase()) && colCust < 0) { colCust = c; customer = h.toUpperCase(); }
     }
-    let colQty = -1;
+    // cột số lượng = cột có tiêu đề là tên cửa hàng: ưu tiên cột dò được trong DMKH, rồi cột ngay trái cột mã KH, rồi cột còn lại đầu tiên
+    const cands = [];
     for (let c = range.s.c; c <= Math.min(range.e.c, 30); c++) {
-      if ([colCode, colName, colPrice, colCust, colStt].includes(c)) continue;
-      if (cellText(ws, hr, c)) { colQty = c; store = cellText(ws, hr, c); break; }
+      if ([colCode, colName, colPrice, colCust, colStt].includes(c) || skip.includes(c)) continue;
+      if (cellText(ws, hr, c)) cands.push(c);
     }
+    let colQty = cands.find(c => matchCustomer(acct.customers, cellText(ws, hr, c), acct.brand).hit);
+    if (colQty == null && colCust >= 0 && cands.includes(colCust - 1)) colQty = colCust - 1;
+    if (colQty == null) colQty = cands.length ? cands[0] : -1;
+    if (colQty >= 0) store = cellText(ws, hr, colQty);
     if (colQty < 0) return { error: 'Không tìm thấy cột số lượng (cột có tiêu đề là tên cửa hàng).' };
     const m = matchCustomer(acct.customers, store, acct.brand);
     const fileCust = customer;
