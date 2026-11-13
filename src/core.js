@@ -932,7 +932,8 @@
       label: 'Clever Food (CLEVERFOOD)', prefix: 'CLEVER', seq: 'dup',
       accept: '.xlsx,.xls', leadDays: 3, workDays: true, fromNgayVe: true,
       // file: Barcode | Tên | <tên cửa hàng> (cột SL) | <mã CLEVERFOODxx> · số đơn CLEVER + chữ tắt + YYMMDD
-      codeRe: /^CLEVERFOOD\d+$/i, codeHint: 'CLEVERFOODxx', brandWords: ['clever', 'food', 'lu', 'doan'],
+      codeRe: /^CLEVERFOOD\d+$/i, codeHint: 'CLEVERFOODxx', brandWords: ['clever', 'food', 'cleverfood'],
+      // chữ tắt = chữ cái đầu tên cửa hàng (bỏ số): LỮ ĐOÀN 21 LÊ ĐỨC THỌ -> LDLDT (anh Tài chốt 13/11)
       abbrOf(name) { return shortName(name, this.brandWords); },
       customers: [{"code": "CLEVERFOOD03", "name": "LỮ ĐOÀN 136 HỒ TÙNG MẬU"}, {"code": "CLEVERFOOD04", "name": "LỮ ĐOÀN NGHĨA ĐÔ"}, {"code": "CLEVERFOOD06", "name": "LỮ ĐOÀN 21 LÊ ĐỨC THỌ"}],
       parse(wb) { return storeSheetAcct(this, wb); }
