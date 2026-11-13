@@ -248,7 +248,7 @@
   /* ---------- Miomio: PO dạng PDF (PURCHASE ORDER) ----------
      Số đơn = "PO No." trên phiếu · ngày đặt = "Order time" · mã KH cố định MIOMIOW0004
      SL điền form = số cuối cùng trong cột Specification × cột Purchase Quantity
-     (vd "1 thùng 24 hộp * 12 cái" × 30 = 360). Barcode → product code theo DMSP, điền cột D. */
+     (vd "1 thùng 24 hộp * 12 cái" × 30 = 360). Barcode điền cột C (anh Tài chốt 13/11). */
   function parseMiomio(acct, items, fileName) {
     const issues = [];
     const all = items.map(x => x.t).join(' ');
@@ -284,18 +284,13 @@
       const ln = { row: i + 1, barcode: b.t, qty: (last && pq) ? last * pq : NaN, flags: [], spec: specTxt, pq, last };
       if (!specTxt || Number.isNaN(last)) ln.flags.push({ level: 'err', msg: `Không đọc được số trong cột Specification ("${specTxt}"). Nhập tay SL.` });
       if (Number.isNaN(pq)) ln.flags.push({ level: 'err', msg: 'Không đọc được Purchase Quantity. Nhập tay SL.' });
-      // barcode -> product code (DMSP); có nhiều mã thì lấy mã trùng barcode, báo vàng
+      // anh Tài chốt 13/11: Miomio điền BARCODE vào cột C (không điền product code); DMSP chỉ để đối chiếu tên
       const cands = root.FFM_PC ? (root.FFM_PC[b.t.padStart(14, '0')] || []) : [];
-      const same = cands.find(c => c[0] === b.t);
-      if (cands.length === 1) ln.productCode = cands[0][0];
-      else if (same) { ln.productCode = same[0]; ln.flags.push({ level: 'info', msg: `DMSP có ${cands.length} mã (${cands.map(c => c[0]).join(', ')}); lấy mã không đuôi ${same[0]} (anh Tài chốt 13/11).` }); }
-      else if (cands.length > 1) { ln.productCode = cands[0][0]; ln.flags.push({ level: 'warn', msg: `DMSP có ${cands.length} mã: ${cands.map(c => c[0]).join(', ')}; đang lấy ${cands[0][0]}, kiểm tra lại.` }); }
-      else { ln.productCode = b.t; ln.flags.push({ level: 'warn', msg: 'Barcode không có trong DMSP; điền barcode vào cột D, kiểm tra lại mã.' }); }
+      if (!cands.length) ln.flags.push({ level: 'warn', msg: 'Barcode không có trong danh mục sản phẩm Hyperion (DMSP).' });
       if (root.FUJI && !root.FUJI.gtinOk(b.t)) ln.flags.push({ level: 'warn', msg: 'Barcode sai số kiểm tra' });
       ln.flags.push({ level: 'info', msg: `SL = ${Number.isNaN(last) ? '?' : last} (số cuối "${specTxt}") × ${Number.isNaN(pq) ? '?' : pq}` });
       const dm = cands.length ? cands[0][1] : '';
-      ln.dmName = dm || desc;
-      ln.name = `${ln.productCode} · ${dm || desc}`;
+      ln.name = dm || desc;
       lines.push(ln);
     });
     if (!lines.length) return { error: 'Không thấy dòng hàng nào (barcode) trên PO.' };
@@ -306,7 +301,7 @@
       if (tq.length && Number(tq[0].t) !== sumPq) issues.push({ level: 'err', msg: `Tổng Purchase Quantity đọc được (${sumPq}) khác dòng Total trên PO (${tq[0].t}). Có thể thiếu hoặc đọc sai dòng.` });
       else if (tq.length) issues.push({ level: 'info', msg: `Khớp tổng Purchase Quantity với dòng Total: ${sumPq}.` });
     }
-    return { fixedPo: true, pcMode: true, editable: true, po, customer: acct.fixedCustomer, store: 'Miomio (Busy Ming)', orderDate, lines, issues, source: 'pdf' };
+    return { fixedPo: true, editable: true, po, customer: acct.fixedCustomer, store: 'Miomio (Busy Ming)', orderDate, lines, issues, source: 'pdf' };
   }
 
   /* ---------- Account rules ---------- */
@@ -456,7 +451,7 @@
     }
     ,
     MIOMIO: {
-      label: 'Miomio (PDF)', fixedPo: true, async: true, pcMode: true, // anh Tài chốt 13/11: dùng form FORM_2_HP như các account khác
+      label: 'Miomio (PDF)', fixedPo: true, async: true, // anh Tài chốt 13/11: form FORM_2_HP, barcode điền cột C
       accept: '.pdf',
       leadDays: 4,
       fixedCustomer: 'MIOMIOW0004', // anh Tài chốt: Miomio cố định mã KH này
