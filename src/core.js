@@ -719,6 +719,108 @@
     return { fixedPo: true, editable: true, po, customer: hit ? hit.code : '', store: addr ? 'Wefresh ' + addr.replace(/^\d+\s*/, '') : 'Wefresh', lines, issues, source: 'pdf' };
   }
 
+
+  /* ================= đợt 4 (13/11 chiều): Kids Plaza, Korea PT, LMLUONG, Tatamart ================= */
+  // Kids Plaza: mỗi sheet "PO …" = 1 đơn; SL = cột "Quantity (Số lượng)" đầu tiên (Kids điền); số đơn KPLAZA + ngày đặt + -01, -02 theo thứ tự sheet
+  function parseKidsPlaza(acct, wb, fileName) {
+    const out = [], skipped = [];
+    wb.SheetNames.forEach(sn => {
+      const ws = wb.Sheets[sn];
+      const h = findHeader(ws, H => { const b = H.findIndex(x => x === 'barcode'), q = H.findIndex(x => x && /^quantity/.test(x)); return b >= 0 && q >= 0 ? { cBc: b, cQty: q, cName: H.findIndex(x => x && /^description/.test(x)) } : null; });
+      if (!h) { skipped.push(sn); return; }
+      const issues = [], lines = [];
+      let orderDate = '', addr = '', storeNo = '';
+      for (let r = h.range.s.r; r < h.row; r++) for (let c = h.range.s.c; c <= Math.min(h.range.e.c, 20); c++) {
+        const f = fold(cellText(ws, r, c));
+        const nextVal = () => { for (let cc = c + 1; cc <= c + 6; cc++) { const t = cellText(ws, r, cc); if (t) return { t, cell: ws[XLSXlib.utils.encode_cell({ r, c: cc })] }; } return null; };
+        if (/^ngay dat/.test(f)) { const v = nextVal(); if (v) { const cv = v.cell && v.cell.v; orderDate = cv instanceof Date ? toISO(cv) : (v.cell && v.cell.t === 'n' ? (d => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`)(new Date(Math.floor(cv - 25569) * 864e5)) : dmy(v.t)); } }
+        if (/^delivery address/.test(f)) { const v = nextVal(); if (v) addr = v.t; }
+        if (/^store no/.test(f)) { const v = nextVal(); if (v) storeNo = v.t; }
+      }
+      for (let r = h.row + 1; r <= h.range.e.r; r++) {
+        const raw = cellText(ws, r, h.cBc), q = cellNum(ws, r, h.cQty);
+        if (!raw.replace(/\D/g, '') || q == null || q === 0) continue;
+        lines.push(stdLine(r + 1, raw, q, h.cName >= 0 ? cellText(ws, r, h.cName) : ''));
+      }
+      dupCheck(lines, issues);
+      if (!lines.length) { skipped.push(sn + ' (không có SL)'); return; }
+      let hit = /kho tong|tong kho/.test(fold(addr)) ? acct.customers.find(c => /tong kho|kho tong/.test(fold(c.name))) : null;
+      if (!hit) { const m = matchAddr(acct.customers, addr, acct.brandWords); hit = m.hit; }
+      if (!hit) issues.push({ key: 'customer', level: 'err', msg: `Không dò được cửa hàng từ địa chỉ giao "${addr}". Chọn ở ô Mã khách hàng (rồi bấm Ghi nhớ).` });
+      if (!orderDate) issues.push({ level: 'warn', msg: 'Không đọc được "Ngày đặt"; số đơn và ngày giao tính theo ô Ngày về đơn.' });
+      out.push({ prefix: acct.prefix, seq: acct.seq, abbr: '', noAbbr: true, poDate: orderDate, orderDate, customer: hit ? hit.code : '', store: addr || ('Kids Plaza ' + storeNo), sheet: wb.SheetNames.length > 1 ? sn : undefined, lines, issues });
+    });
+    if (!out.length) return { error: 'Không thấy bảng hàng (cột Barcode + Quantity). File này có đúng mẫu PURCHASE ORDER của Kids Plaza không?' };
+    if (skipped.length) out[0].issues.push({ level: 'info', msg: `Bỏ qua sheet: ${skipped.join(', ')}.` });
+    if (out.length > 1) out.forEach(o => o.issues.push({ level: 'info', msg: `File có ${out.length} sheet PO → ${out.length} đơn riêng (-01, -02 theo thứ tự sheet).` }));
+    return out.length > 1 ? { multi: out } : out[0];
+  }
+  function parseKorea(acct, wb, fileName) {
+    const s = parseSimpleSheet(acct, wb, fileName, { bcHead: /^barcode$/, qtyHead: /^sl dat|^so luong/ });
+    if (s.error) return s;
+    return { prefix: acct.prefix, seq: acct.seq, abbr: '', noAbbr: true, customer: acct.fixedCustomer, store: 'Korea PT', lines: s.lines, issues: s.issues };
+  }
+  // LMLUONG: mã KH ở ô A1; cột Product Code có đuôi chữ (R/B = màu) -> đưa nguyên mã có đuôi vào cột Barcode
+  function parseLmLuong(acct, wb, fileName) {
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const h = findHeader(ws, H => { const b = H.findIndex(x => x === 'barcode'), q = H.findIndex(x => x && /^sl dat/.test(x)); return b >= 0 && q >= 0 ? { cBc: b, cQty: q, cPc: H.findIndex(x => x === 'product code'), cName: H.findIndex(x => x && /vietnamese name|ten/.test(x)) } : null; });
+    if (!h) return { error: 'Không thấy cột Barcode / SL ĐẶT. File này có đúng mẫu đơn LMLUONG không?' };
+    const issues = [], lines = [];
+    let code = '';
+    for (let r = h.range.s.r; r < h.row; r++) for (let c = h.range.s.c; c <= Math.min(h.range.e.c, 15); c++) { const t = cellText(ws, r, c).trim(); if (/^LMLG\w+$/i.test(t)) code = t.toUpperCase(); }
+    for (let r = h.row + 1; r <= h.range.e.r; r++) {
+      const bc = cellText(ws, r, h.cBc).trim(), q = cellNum(ws, r, h.cQty);
+      if (!bc.replace(/\D/g, '') || q == null || q === 0) continue;
+      const pc = h.cPc >= 0 ? cellText(ws, r, h.cPc).trim().toUpperCase() : '';
+      const ln = stdLine(r + 1, bc, q, h.cName >= 0 ? cellText(ws, r, h.cName) : '');
+      if (/^\d{8,14}[A-Z]{1,2}$/.test(pc) && pc.startsWith(ln.barcode.replace(/^0+/, '')) || /^\d{8,14}[A-Z]{1,2}$/.test(pc) && pc.replace(/[A-Z]+$/, '') === ln.barcode) {
+        ln.barcode = pc; ln.flags = ln.flags.filter(f => !/barcode/i.test(f.msg)); ln.flags.push({ level: 'info', msg: `Mã có đuôi màu (${pc}) đưa vào cột Barcode` });
+      }
+      lines.push(ln);
+    }
+    // trùng barcode gốc nhưng khác đuôi màu là 2 mã khác nhau -> dupCheck theo mã đã có đuôi
+    dupCheck(lines, issues);
+    const known = acct.customers.find(c => c.code === code);
+    if (!code) issues.push({ key: 'customer', level: 'warn', msg: `Không thấy mã KH (LMLG…) ở đầu file; dùng ${acct.fixedCustomer}.` });
+    else if (!known) issues.push({ key: 'customer', level: 'warn', msg: `Mã KH ${code} trên file không có trong DMKH.` });
+    return { prefix: acct.prefix, seq: acct.seq, abbr: '', noAbbr: true, customer: code || acct.fixedCustomer, store: known ? known.name : 'LMLUONG', lines, issues };
+  }
+  // Tatamart: SL = cột "Số lượng" (cột D), barcode cột "BARCODE"; mã KH theo ghi chú "Xử lý đơn vào mã KH … - TATAMART <tên>": dò theo tên cửa hàng
+  function parseTatamart(acct, wb, fileName) {
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const range = XLSXlib.utils.decode_range(ws['!ref'] || 'A1:A1');
+    let hr = -1, cBc = -1, cQty = -1, cName = -1, cNote = -1, note = '';
+    for (let r = range.s.r; r <= Math.min(range.e.r, 30); r++) for (let c = range.s.c; c <= Math.min(range.e.c, 30); c++) {
+      const t = cellText(ws, r, c), f = fold(t).trim();
+      if (/xu ly don vao ma kh/.test(f)) note = t;
+      if (f === 'barcode' && cBc < 0) { cBc = c; hr = r; }
+      if (f === 'so luong' && cQty < 0) cQty = c;
+      if (/^noi dung/.test(f)) cName = c;
+      if (f === 'note' || f === 'ghi chu') cNote = c;
+    }
+    if (cBc < 0 || cQty < 0) return { error: 'Không thấy cột BARCODE / Số lượng. File này có đúng mẫu đơn Tatamart không?' };
+    const issues = [], lines = [];
+    let oos = 0;
+    for (let r = hr + 1; r <= range.e.r; r++) {
+      const raw = cellText(ws, r, cBc), q = cellNum(ws, r, cQty);
+      if (!raw.replace(/\D/g, '') || q == null || q === 0) continue;
+      const ln = stdLine(r + 1, raw, q, cName >= 0 ? cellText(ws, r, cName) : '');
+      const nt = cNote >= 0 ? cellText(ws, r, cNote) : '';
+      if (/het hang/.test(fold(nt))) { oos++; ln.flags.push({ level: 'warn', msg: `Đơn ghi "${nt.trim()}"` }); }
+      lines.push(ln);
+    }
+    dupCheck(lines, issues);
+    if (oos) issues.push({ level: 'warn', msg: `${oos} dòng có ghi chú "Tạm hết hàng" trên đơn (vẫn đưa vào form như mẫu). Kiểm tra lại trước khi up.` });
+    const mCode = note.match(/TATAMA?R?T\d{3,}/i), mName = note.match(/-\s*(TATAMART[^\n]*?)(?:\s+và\s|:|$)/i);
+    let hit = null;
+    if (mName) hit = matchAddr(acct.customers, mName[1], acct.brandWords).hit;
+    const byCode = mCode && acct.customers.find(c => c.code.toUpperCase() === mCode[0].toUpperCase());
+    if (!hit) hit = byCode || null;
+    if (hit && mCode && hit.code.toUpperCase() !== mCode[0].toUpperCase()) issues.push({ key: 'customer', level: 'warn', msg: `Ghi chú trên đơn ghi mã ${mCode[0]}${byCode ? '' : ' (không có trong DMKH)'} nhưng tên "${mName ? mName[1].trim() : ''}" là ${hit.code}. Em lấy theo tên cửa hàng.` });
+    if (!hit) issues.push({ key: 'customer', level: 'err', msg: 'Không dò được cửa hàng Tatamart. Chọn ở ô Mã khách hàng (rồi bấm Ghi nhớ).' });
+    return { prefix: acct.prefix, seq: acct.seq, abbr: '', noAbbr: true, customer: hit ? hit.code : '', store: mName ? mName[1].trim() : 'Tatamart', lines, issues };
+  }
+
   /* ---------- Account rules ---------- */
   const ACCOUNTS = {
     KKTC: {
@@ -974,6 +1076,35 @@
     WEFRESH: pdfAcct('Wefresh (PDF)', parseWefresh, {
       customers: [{"code": "WEFRESH0001", "name": "WEFRESH_174 Thái Hà"}]
     })
+
+    ,
+    KPLAZA: {
+      label: 'Kids Plaza (KPLAZA, nhiều sheet)', prefix: 'KPLAZA', seq: 'always', noAbbr: true,
+      accept: '.xlsx,.xls', leadDays: 3, workDays: true,
+      // số đơn KPLAZA + YYMMDD ngày đặt + -01/-02 theo sheet · ngày giao = ngày đặt + 3 ngày làm việc (mẫu 06/11 -> 10/11)
+      brandWords: ['kids', 'plaza', 'kidsplaza', 'dc', 'cong', 'ty', 'co', 'phan'],
+      customers: [{"code": "KPLAZA150", "name": "Số 1048 Đê La Thành"}, {"code": "KPLAZA072", "name": "DC_Công ty cổ phần Kids Plaza (Tổng kho Miền Bắc)"}, {"code": "KPLAZA192", "name": "KIDSPLAZA PHỐ GẠCH"}],
+      parse(wb, fileName) { return parseKidsPlaza(this, wb, fileName || ''); }
+    },
+    KOREAN: {
+      label: 'Korea PT (KOREAN)', prefix: 'KOREAN', seq: 'dup', noAbbr: true,
+      accept: '.xlsx,.xls', leadDays: 3, workDays: true, fromNgayVe: true,
+      fixedCustomer: 'KOREAN0001', customers: [{"code": "KOREAN0001", "name": "KOREAN PT"}],
+      parse(wb, fileName) { return parseKorea(this, wb, fileName || ''); }
+    },
+    LMLUONG: {
+      label: 'LMLUONG (Lê\'s UK Store)', prefix: 'LMLUONG', seq: 'dup', noAbbr: true,
+      accept: '.xlsx,.xls', leadDays: 3, workDays: true, fromNgayVe: true,
+      fixedCustomer: 'LMLGHNI0001', customers: [{"code": "LMLGHNI0001", "name": "LMLUONG_Lê's Uk Store 45 Trung Hòa"}],
+      parse(wb, fileName) { return parseLmLuong(this, wb, fileName || ''); }
+    },
+    TATAMART: {
+      label: 'Tatamart (TATAMAT)', prefix: 'TATAMART', seq: 'dup', noAbbr: true,
+      accept: '.xlsx,.xls', leadDays: 3, workDays: true, fromNgayVe: true,
+      brandWords: ['tatamart'],
+      customers: [{"code": "TATAMAT0020", "name": "TATAMART BÌNH NGUYÊN"}, {"code": "TATAMAT0021", "name": "TATAMART BẠCH TRỮ"}, {"code": "TATAMAT0022", "name": "TATAMART NGUYỄN BÁ QUYỀN"}, {"code": "TATAMAT0023", "name": "TATAMART PHÙ LỖ"}, {"code": "TATAMAT0024", "name": "TATAMART YÊN LẠC"}, {"code": "TATAMAT0025", "name": "TATAMART TAM HỒNG"}, {"code": "TATAMAT0026", "name": "TATAMART 102 NGUYỄN KHOAN"}, {"code": "TATAMAT0027", "name": "TATAMART 41 NGUYỄN TRÃI"}, {"code": "TATAMAT0028", "name": "TATAMART 20 LÝ THƯỜNG KIỆT"}, {"code": "TATAMAT0029", "name": "TATAMART 412 HÙNG VƯƠNG"}, {"code": "TATAMAT0030", "name": "TATAMART PHỐ LỒ"}, {"code": "TATAMAT0031", "name": "TATAMART CHỢ LẦM"}, {"code": "TATAMAT0032", "name": "TATAMART 102 TRƯNG TRẮC"}, {"code": "TATAMAT0033", "name": "TATAMART TỀ LỖ"}, {"code": "TATAMAT0034", "name": "TATAMART THẠCH ĐÀ"}, {"code": "TATAMAT0035", "name": "TATAMART BÁ HIẾN"}, {"code": "TATAMAT0036", "name": "TATAMART GIA TRUNG"}, {"code": "TATAMAT0037", "name": "TATAMART TỨ TRƯNG"}, {"code": "TATAMAT0038", "name": "TATAMART 158 NGUYỄN VĂN LINH"}],
+      parse(wb, fileName) { return parseTatamart(this, wb, fileName || ''); }
+    }
 
   };
 

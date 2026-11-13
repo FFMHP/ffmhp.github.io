@@ -250,7 +250,7 @@ $('addBtn').addEventListener('click', () => {
   $('addBc').value = ''; $('addPc').value = ''; acctNote();
 });
 // Mã KH: team tự thêm (chọn tay ở ô Mã khách hàng là tự lưu; hoặc thêm trong ô "+ Thêm mã khách hàng")
-const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/, ANNHIEN: /^ANHN/, MIOMIO: /^MIOMIOW/, FANTASY: /^FANTASY/, FGARDEN: /^FGARDEN/, HIENLUONG: /^HIENLUONG/, HINODE: /^HINODE/, JAPAUS: /^JAPAUS/, SAKUKO: /^SAKUKO/, SIBA: /^SIBA/, ANHVIET: /^ANHVIET/, CLEVER: /^CLEVERFOOD/, FMKT: /^FMKTHNI/, KAISER: /^CVS/, OHMEE: /^OHMEE/, RFOOD: /^RFOODTP/, TOP5: /^TOP5_MART/, WEFRESH: /^WEFRESH/ };
+const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/, ANNHIEN: /^ANHN/, MIOMIO: /^MIOMIOW/, FANTASY: /^FANTASY/, FGARDEN: /^FGARDEN/, HIENLUONG: /^HIENLUONG/, HINODE: /^HINODE/, JAPAUS: /^JAPAUS/, SAKUKO: /^SAKUKO/, SIBA: /^SIBA/, ANHVIET: /^ANHVIET/, CLEVER: /^CLEVERFOOD/, FMKT: /^FMKTHNI/, KAISER: /^CVS/, OHMEE: /^OHMEE/, RFOOD: /^RFOODTP/, TOP5: /^TOP5_MART/, WEFRESH: /^WEFRESH/, KPLAZA: /^KPLAZA/, KOREAN: /^KOREAN/, LMLUONG: /^LMLG/, TATAMART: /^TATAMAT/ };
 function saveCust(acctKey, code, store){
   const list = (window.FFM_CUST_SHARED || []).filter(x => !(x.acct === acctKey && x.name.trim().toLowerCase() === store.trim().toLowerCase()));
   list.push({ acct: acctKey, code, name: store.trim() });
