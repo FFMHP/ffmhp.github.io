@@ -68,7 +68,7 @@
     <a class="team" href="#/don-hang">
       <span class="team-ic" aria-hidden="true">📦</span>
       <b>Team đơn hàng</b>
-      <small>Chuyển đơn khách (Kmart, Morgant, BRG, AEON, Sói Biển, An Nhiên) sang form FORM_2_HP.</small>
+      <small>Chuyển đơn khách (Kmart, Morgant, BRG, AEON, Sói Biển, An Nhiên, Miomio) sang form FORM_2_HP.</small>
     </a>
     <a class="team" href="#/khac">
       <span class="team-ic" aria-hidden="true">🧩</span>
@@ -78,13 +78,10 @@
   </nav>
   <section class="panel stats" aria-label="Hoạt động hôm nay">
     <div class="stats-h"><b>Hôm nay</b><span class="note" id="statsNote">Đang tải…</span></div>
-    <div class="tiles">
-      <div class="tile"><span class="tile-n" id="stOrders">–</span><span class="tile-l">đơn đã chuyển</span></div>
-      <div class="tile"><span class="tile-n" id="stDl">–</span><span class="tile-l">file đã tải</span></div>
-      <div class="tile"><span class="tile-n" id="stErr">–</span><span class="tile-l">đơn còn lỗi khi chuyển</span></div>
-      <div class="tile"><span class="tile-n" id="stUsers">–</span><span class="tile-l">người dùng</span></div>
+    <div class="tiles tiles2">
+      <div class="tile"><span class="tile-l">📦 Team đơn hàng</span><span class="tile-n" id="stDon">–</span><span class="tile-l">thao tác hôm nay</span></div>
+      <div class="tile"><span class="tile-l">🧩 Team khác</span><span class="tile-n" id="stKhac">–</span><span class="tile-l">thao tác hôm nay</span></div>
     </div>
-    <ul class="recent" id="recent"></ul>
   </section>
 </div>
 
@@ -175,7 +172,7 @@
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v39</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v40</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 

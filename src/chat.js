@@ -63,22 +63,10 @@
     statsAt = Date.now();
     try {
       const j = await (await fetch(API + '?t=stats', { cache: 'no-store' })).json();
-      const t = j.today || {};
-      $('stOrders').textContent = (t.orders || 0).toLocaleString('vi-VN');
-      $('stDl').textContent = (t.downloads || 0).toLocaleString('vi-VN');
-      $('stErr').textContent = (t.err || 0).toLocaleString('vi-VN');
-      $('stUsers').textContent = (t.users || 0).toLocaleString('vi-VN');
+      const tm = j.teams || {};
+      $('stDon').textContent = (tm.donhang || 0).toLocaleString('vi-VN');
+      $('stKhac').textContent = (tm.khac || 0).toLocaleString('vi-VN');
       $('statsNote').textContent = 'cập nhật ' + fmt(Date.now());
-      const ul = $('recent'); ul.innerHTML = '';
-      (j.recent || []).slice(0, 6).forEach(x => {
-        const li = document.createElement('li');
-        // không ghi tên người làm, chỉ ghi việc đã làm
-        const what = x.ev === 'Chuyển đổi' ? `Chuyển ${x.orders || 0} đơn ${x.acct || ''}` : /^Tải/.test(x.ev) ? `Tải ${x.orders || 0} file ${x.acct || ''}` : `${x.ev || ''} ${x.acct || ''}`;
-        const sp = document.createElement('span'); sp.textContent = what.trim();
-        const tm = document.createElement('time'); tm.textContent = fmt(x.t);
-        li.append(sp, tm); ul.append(li);
-      });
-      if (!ul.children.length) { const li = document.createElement('li'); li.className = 'note'; li.textContent = 'Chưa có hoạt động nào hôm nay.'; ul.append(li); }
     } catch (e) { $('statsNote').textContent = 'chưa tải được số liệu'; }
   }
   chatWho.addEventListener('change', () => setName(chatWho.value));

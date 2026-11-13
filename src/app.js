@@ -131,7 +131,7 @@ function logEvent(d){
   if (!/^https:/.test(LOG_URL)) return;
   try {
     fetch(LOG_URL, { method:'POST', mode:'no-cors', keepalive:true, headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify(Object.assign({ user: who.value.trim(), ver: ($('ver').textContent || '').replace('Phiên bản ', '') }, d)) }).catch(() => {});
+      body: JSON.stringify(Object.assign({ team: 'donhang', user: who.value.trim(), ver: ($('ver').textContent || '').replace('Phiên bản ', '') }, d)) }).catch(() => {});
   } catch(e) {}
 }
 
