@@ -288,7 +288,7 @@
       const cands = root.FFM_PC ? (root.FFM_PC[b.t.padStart(14, '0')] || []) : [];
       const same = cands.find(c => c[0] === b.t);
       if (cands.length === 1) ln.productCode = cands[0][0];
-      else if (same) { ln.productCode = same[0]; ln.flags.push({ level: 'warn', msg: `DMSP có ${cands.length} mã cho barcode này (${cands.map(c => c[0]).join(', ')}); đang lấy ${same[0]}.` }); }
+      else if (same) { ln.productCode = same[0]; ln.flags.push({ level: 'info', msg: `DMSP có ${cands.length} mã (${cands.map(c => c[0]).join(', ')}); lấy mã không đuôi ${same[0]} (anh Tài chốt 13/11).` }); }
       else if (cands.length > 1) { ln.productCode = cands[0][0]; ln.flags.push({ level: 'warn', msg: `DMSP có ${cands.length} mã: ${cands.map(c => c[0]).join(', ')}; đang lấy ${cands[0][0]}, kiểm tra lại.` }); }
       else { ln.productCode = b.t; ln.flags.push({ level: 'warn', msg: 'Barcode không có trong DMSP; điền barcode vào cột D, kiểm tra lại mã.' }); }
       if (root.FUJI && !root.FUJI.gtinOk(b.t)) ln.flags.push({ level: 'warn', msg: 'Barcode sai số kiểm tra' });

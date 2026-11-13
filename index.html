@@ -397,7 +397,7 @@ label.step.done i{background:var(--ok);border-color:var(--ok);color:#fff}
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v37</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v38</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
@@ -1184,7 +1184,7 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
       const cands = root.FFM_PC ? (root.FFM_PC[b.t.padStart(14, '0')] || []) : [];
       const same = cands.find(c => c[0] === b.t);
       if (cands.length === 1) ln.productCode = cands[0][0];
-      else if (same) { ln.productCode = same[0]; ln.flags.push({ level: 'warn', msg: `DMSP có ${cands.length} mã cho barcode này (${cands.map(c => c[0]).join(', ')}); đang lấy ${same[0]}.` }); }
+      else if (same) { ln.productCode = same[0]; ln.flags.push({ level: 'info', msg: `DMSP có ${cands.length} mã (${cands.map(c => c[0]).join(', ')}); lấy mã không đuôi ${same[0]} (anh Tài chốt 13/11).` }); }
       else if (cands.length > 1) { ln.productCode = cands[0][0]; ln.flags.push({ level: 'warn', msg: `DMSP có ${cands.length} mã: ${cands.map(c => c[0]).join(', ')}; đang lấy ${cands[0][0]}, kiểm tra lại.` }); }
       else { ln.productCode = b.t; ln.flags.push({ level: 'warn', msg: 'Barcode không có trong DMSP; điền barcode vào cột D, kiểm tra lại mã.' }); }
       if (root.FUJI && !root.FUJI.gtinOk(b.t)) ln.flags.push({ level: 'warn', msg: 'Barcode sai số kiểm tra' });
