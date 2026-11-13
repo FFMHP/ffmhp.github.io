@@ -342,7 +342,7 @@ button.danger{color:var(--err);border-color:var(--err)}
     <a class="team" href="#/don-hang">
       <span class="team-ic" aria-hidden="true">📦</span>
       <b>Team đơn hàng</b>
-      <small>Chuyển đơn khách (Kmart, Morgant, BRG, AEON, Sói Biển, An Nhiên, Miomio) sang form FORM_2_HP.</small>
+      <small>Chuyển đơn khách (Kmart, Morgant, BRG, AEON, Aeon Fantasy, Sói Biển, An Nhiên, Miomio, Fresh Garden, Hiền Lương, Hinode, Japaus, Sakuko, Siba Food) sang form FORM_2_HP.</small>
     </a>
     <a class="team" href="#/khac">
       <span class="team-ic" aria-hidden="true">🧩</span>
@@ -481,7 +481,7 @@ button.danger{color:var(--err);border-color:var(--err)}
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v41</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v42</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
@@ -593,7 +593,7 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
   // các đoạn chữ của PDF giữ nguyên từng ô (không tách theo dấu cách) — dùng cho PO Miomio
   async function pdfItems(buf) {
     const pdfjsLib = root.pdfjsLib;
-    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise;
+    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf).slice(), isEvalSupported: false }).promise;
     const out = [];
     for (let pn = 1; pn <= doc.numPages; pn++) {
       const page = await doc.getPage(pn);
@@ -611,7 +611,7 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
 
   async function pdfWords(buf) {
     const pdfjsLib = root.pdfjsLib;
-    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise;
+    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf).slice(), isEvalSupported: false }).promise;
     const page = await doc.getPage(1);
     const vp = page.getViewport({ scale: 1 });
     const tc = await page.getTextContent();
@@ -899,7 +899,7 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
 
   async function aeonPdfParse(buf, onProgress, tessOpts) {
     const pdfjsLib = root.pdfjsLib;
-    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise;
+    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf).slice(), isEvalSupported: false }).promise;
     onProgress && onProgress('Đang tải bộ nhận dạng chữ…');
     const worker = await getWorker(tessOpts);
     const S = 3, toks = [];
@@ -1284,6 +1284,286 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
     return { fixedPo: true, editable: true, po, customer: acct.fixedCustomer, store: 'Miomio (Busy Ming)', orderDate, lines, issues, source: 'pdf' };
   }
 
+
+  /* ================= 7 acc thêm 13/11: Aeon Fantasy, Fresh Garden, Hiền Lương, Hinode, Japaus, Sakuko, Siba Food ================= */
+  // dòng hàng chuẩn: kiểm SL, barcode, DMSP; tên lấy theo DMSP (không có thì tên trên đơn)
+  function stdLine(row, bcRaw, qty, srcName) {
+    let bc = String(bcRaw == null ? '' : bcRaw).replace(/\D/g, '');
+    const ln = { row, barcode: bc, qty, flags: [] };
+    if (/^\d{11}$/.test(bc)) { ln.barcode = bc = '0' + bc; ln.flags.push({ level: 'info', msg: 'Đã thêm số 0 đầu (file gốc mất số 0)' }); }
+    if (qty == null || Number.isNaN(qty)) ln.flags.push({ level: 'err', msg: 'Không đọc được số lượng. Nhập tay SL.' });
+    else if (qty < 0 || !Number.isInteger(qty)) ln.flags.push({ level: 'err', msg: 'Số lượng âm hoặc lẻ thập phân' });
+    if (!bc) ln.flags.push({ level: 'err', msg: 'Thiếu barcode' });
+    else if (!/^\d{8}$|^\d{12,14}$/.test(bc)) ln.flags.push({ level: 'warn', msg: 'Barcode lạ (không phải 8/12/13/14 số)' });
+    else if (root.FFM_DMSP && !root.FFM_DMSP[bc.padStart(14, '0')]) ln.flags.push({ level: 'warn', msg: 'Barcode không có trong danh mục sản phẩm Hyperion (DMSP)' });
+    const dm = root.FFM_DMSP && bc ? root.FFM_DMSP[bc.padStart(14, '0')] : '';
+    ln.name = dm || norm(srcName).replace(/\s+/g, ' ');
+    return ln;
+  }
+  function dupCheck(lines, issues) {
+    const seen = {};
+    lines.forEach(l => { if (l.barcode) { if (seen[l.barcode]) l.flags.push({ level: 'warn', msg: `Trùng barcode với dòng ${seen[l.barcode]}` }); else seen[l.barcode] = l.row; } });
+    if (!lines.length) issues.push({ level: 'err', msg: 'Không có dòng nào có số lượng đặt hàng.' });
+  }
+  const dmy = s => { const m = String(s || '').match(/(\d{1,2})\s*[\/.\-]\s*(\d{1,2})\s*[\/.\-]\s*(\d{4})/); return m && +m[3] > 1990 ? `${m[3]}-${pad(+m[2])}-${pad(+m[1])}` : ''; };
+  // dò cửa hàng theo địa chỉ/tên trên đơn: tỉ lệ từ trong tên DMKH (bỏ thương hiệu) xuất hiện trong chữ trên đơn
+  const ADDR_EXPAND = [[/\bcong nghiep\b/g, 'cn'], [/\bkhu cong nghiep\b/g, 'kcn'], [/\bthanh pho\b/g, 'tp'], [/\bho chi minh\b/g, 'hcm']];
+  function matchAddr(list, text, brandWords) {
+    let t = ' ' + key(text) + ' ';
+    ADDR_EXPAND.forEach(([re, ab]) => { if (re.test(t)) t += ab + ' '; });
+    const toks = new Set(t.trim().split(' '));
+    const scored = list.map(c => {
+      const ct = key(c.name).split(' ').filter(w => w && !brandWords.includes(w));
+      if (!ct.length) return { c, s: 0, n: 0 };
+      const hit = ct.filter(w => toks.has(w)).length;
+      // số nhà phải khớp (34 Vũ Phạm Hàm ≠ 126 …)
+      const numsOk = ct.filter(w => /^\d+$/.test(w)).every(w => toks.has(w));
+      return { c, s: numsOk ? hit / ct.length : 0, n: hit };
+    }).sort((a, b) => (b.s - a.s) || (b.n - a.n));
+    const [a, b] = scored;
+    if (a && a.s >= 0.75 && a.n >= 1 && (!b || b.s < a.s || b.n < a.n)) return { hit: a.c, exact: a.s === 1 };
+    return { hit: null };
+  }
+  // chữ tắt cửa hàng: chữ cái đầu các từ trong tên DMKH (bỏ thương hiệu, bỏ số): "SAKUKO MART HÀNG BÔNG" -> HB
+  const initials = (name, brandWords) => key(name).split(' ').filter(w => w && !brandWords.includes(w) && !/^\d+$/.test(w)).map(w => w[0]).join('').toUpperCase();
+  function findHeader(ws, test, maxRows) {
+    const range = XLSXlib.utils.decode_range(ws['!ref'] || 'A1:A1');
+    for (let r = range.s.r; r <= Math.min(range.e.r, range.s.r + (maxRows || 25)); r++) {
+      const H = []; for (let c = range.s.c; c <= Math.min(range.e.c, 40); c++) H[c] = fold(cellText(ws, r, c)).replace(/\s+/g, ' ').trim();
+      const m = test(H); if (m) return Object.assign({ row: r, H, range }, m);
+    }
+    return null;
+  }
+  const rowText = (ws, r, range) => { const a = []; for (let c = range.s.c; c <= Math.min(range.e.c, 40); c++) { const t = cellText(ws, r, c); if (t) a.push(t); } return a.join(' '); };
+
+  /* Excel 1 sheet, 1 cột barcode + 1 cột SL; phần đầu có địa chỉ giao, ngày đặt */
+  function parseSimpleSheet(acct, wb, fileName, o) {
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const h = findHeader(ws, H => {
+      const b = H.findIndex(x => x && o.bcHead.test(x)), q = H.findIndex(x => x && o.qtyHead.test(x));
+      return b >= 0 && q >= 0 ? { cBc: b, cQty: q, cName: H.findIndex(x => x && /ten (san pham|sp|hang)/.test(x)) } : null;
+    });
+    if (!h) return { error: `Không thấy dòng tiêu đề (cột mã hàng/barcode và cột số lượng). File này có đúng mẫu đơn ${acct.label} không?` };
+    const issues = [], top = [];
+    for (let r = h.range.s.r; r < h.row; r++) top.push(rowText(ws, r, h.range));
+    const head = top.join('\n');
+    const lines = [];
+    let sumFile = null;
+    for (let r = h.row + 1; r <= h.range.e.r; r++) {
+      const raw = cellText(ws, r, h.cBc), q = cellNum(ws, r, h.cQty);
+      const label = fold(rowText(ws, r, h.range));
+      if (!raw.replace(/\D/g, '')) { if (/^tong\b|\btong cong\b/.test(label) && q != null) sumFile = q; continue; }
+      if (q == null || q === 0) continue;
+      lines.push(stdLine(r + 1, raw, q, h.cName >= 0 ? cellText(ws, r, h.cName) : ''));
+    }
+    dupCheck(lines, issues);
+    const sum = lines.reduce((s, l) => s + (l.qty || 0), 0);
+    if (sumFile != null) issues.push(sumFile === sum ? { level: 'info', msg: `Khớp tổng SL với dòng TỔNG trên đơn: ${sum}.` } : { level: 'err', msg: `Tổng SL đọc được (${sum}) khác dòng TỔNG trên đơn (${sumFile}).` });
+    return { head, lines, issues };
+  }
+  // mã KH: dò theo địa chỉ giao trên đơn; mã ghi tay trên file (vd FGARDEN0001) chỉ để đối chiếu
+  function pickCustomer(acct, text, issues, codeRe) {
+    const m = matchAddr(acct.customers, text, acct.brandWords || []);
+    const written = (text.match(codeRe) || [])[0];
+    let hit = m.hit;
+    if (!hit && written) hit = acct.customers.find(c => c.code.toUpperCase() === written.toUpperCase()) || null;
+    if (hit && written && hit.code.toUpperCase() !== written.toUpperCase()) issues.push({ key: 'customer', level: 'warn', msg: `Trên đơn có ghi mã ${written} nhưng địa chỉ giao khớp ${hit.code} (${hit.name}). Kiểm tra lại mã KH.` });
+    if (!hit) issues.push({ key: 'customer', level: 'err', msg: `Không dò được cửa hàng từ địa chỉ "${text.replace(/\s+/g, ' ').slice(0, 90)}". Chọn ở ô Mã khách hàng (rồi bấm Ghi nhớ).` });
+    else if (!m.exact && !written) issues.push({ key: 'customer', level: 'warn', msg: `Mã KH dò gần đúng: ${hit.code} (${hit.name}). Kiểm tra lại.` });
+    return hit;
+  }
+
+  function parseFreshGarden(acct, wb, fileName) {
+    const s = parseSimpleSheet(acct, wb, fileName, { bcHead: /^ma hang$|barcode|ma vach/, qtyHead: /^so luong/ });
+    if (s.error) return s;
+    const orderDate = dmy((fold(s.head).match(/ngay dat[^\n]*/) || [''])[0]);
+    const addr = (s.head.split('\n').find(l => /dia chi/.test(fold(l))) || s.head);
+    const hit = pickCustomer(acct, addr, s.issues, /FGARDEN\d{3,}/i);
+    if (!orderDate) s.issues.push({ level: 'warn', msg: 'Không đọc được "Ngày đặt hàng" trên đơn.' });
+    if (orderDate) s.issues.push({ level: 'info', msg: `Ngày đặt trên đơn: ${orderDate.split('-').reverse().join('/')}.` });
+    return { prefix: acct.prefix, seq: acct.seq, abbr: '', noAbbr: true, customer: hit ? hit.code : '', store: addr.replace(/^.*?:\s*/, ''), lines: s.lines, issues: s.issues };
+  }
+  function parseSakuko(acct, wb, fileName) {
+    const s = parseSimpleSheet(acct, wb, fileName, { bcHead: /^ma sp$|barcode|ma vach/, qtyHead: /^sl dat|^so luong/ });
+    if (s.error) return s;
+    const addr = (s.head.split('\n').find(l => /dia chi/.test(fold(l))) || s.head);
+    const hit = pickCustomer(acct, addr, s.issues, /SAKUKO\d{3,}/i);
+    const abbr = hit ? initials(hit.name, acct.brandWords) : '';
+    if (hit && !abbr) s.issues.push({ key: 'po', level: 'err', msg: 'Không tạo được chữ tắt cửa hàng cho số đơn. Nhập tay Số đơn.' });
+    const need = dmy((s.head.split('\n').find(l => /can giao|ngay giao/.test(fold(l))) || ''));
+    if (need) s.issues.push({ level: 'info', msg: `Đơn ghi thời gian cần giao ${need.split('-').reverse().join('/')}; ngày giao trên form = ngày về đơn + ${acct.leadDays}.` });
+    return { prefix: acct.prefix, seq: acct.seq, abbr, customer: hit ? hit.code : '', store: addr.replace(/^.*?:\s*/, ''), lines: s.lines, issues: s.issues };
+  }
+  // Hiền Lương: file .xls cũ, font TCVN3 (chữ Việt hiển thị lỗi) -> dò theo vị trí: dòng có barcode 8-14 số, SL = số đầu tiên sau cột ĐVT
+  function parseHienLuong(acct, wb, fileName) {
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const range = XLSXlib.utils.decode_range(ws['!ref'] || 'A1:A1');
+    const issues = [];
+    let cBc = -1, cQty = -1, orderDate = '', soPhieu = '';
+    for (let r = range.s.r; r <= Math.min(range.e.r, 60); r++) for (let c = range.s.c; c <= Math.min(range.e.c, 120); c++) {
+      const t = cellText(ws, r, c);
+      if (cBc < 0 && /^barcode$/i.test(t.trim())) cBc = c;
+      if (cQty < 0 && /^S\.L\s*\n?\s*§Æt/i.test(t)) cQty = c;
+      if (!orderDate && /^\d{1,2}\/\d{1,2}\/\d{4}/.test(t) && !/1900/.test(t)) orderDate = dmy(t);
+      if (!soPhieu && /^0{2,}\d{6,}$/.test(t.trim())) soPhieu = t.trim();
+    }
+    if (cBc < 0) return { error: 'Không thấy cột BARCODE. File này có đúng mẫu phiếu đặt hàng Hiền Lương (.xls) không?' };
+    // ô gộp làm tiêu đề lệch cột so với dữ liệu -> mỗi dòng: tìm ô barcode (8-14 số), SL = ô số đầu tiên sau ô ĐVT
+    const lines = [];
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      let cb = -1;
+      for (let c = range.s.c; c <= Math.min(range.e.c, 120) && cb < 0; c++) { const cell = ws[XLSXlib.utils.encode_cell({ r, c })], t = cellText(ws, r, c).trim(); if (cell && /^\d{8,14}$/.test(t) && !/^000/.test(t) && (cell.t === 's' || t.length >= 12)) cb = c; }
+      if (cb < 0) continue;
+      let q = null, unit = '';
+      for (let c = cb + 1; c <= Math.min(range.e.c, cb + 40); c++) {
+        const t = cellText(ws, r, c).trim(); if (!t) continue;
+        const n = cellNum(ws, r, c);
+        if (n == null || Number.isNaN(n)) { if (!unit) unit = t; continue; }
+        q = n; break;
+      }
+      if (q === 0) continue;
+      lines.push(stdLine(r + 1, cellText(ws, r, cb), q, ''));
+    }
+    dupCheck(lines, issues);
+    if (!orderDate) issues.push({ level: 'info', msg: 'Không đọc được ngày đặt trên phiếu.' });
+    if (soPhieu) issues.push({ level: 'info', msg: `Số phiếu Hiền Lương: ${soPhieu}.` });
+    if (orderDate) issues.push({ level: 'info', msg: `Ngày đặt trên phiếu: ${orderDate.split('-').reverse().join('/')}.` });
+    return { prefix: acct.prefix, seq: acct.seq, abbr: '', noAbbr: true, customer: acct.fixedCustomer, store: 'Siêu thị Hiền Lương', lines, issues };
+  }
+
+  /* ---------- PDF dạng bảng: gán từng chữ/số vào cột gần nhất theo tiêu đề; mỗi dòng hàng neo theo ô số lượng ---------- */
+  function pdfTable(items, o) {
+    // o.heads: {name: item tiêu đề}; o.qty, o.bc: tên cột; o.top: y dưới tiêu đề; o.stop: y dòng tổng (không có thì hết trang)
+    const H = Object.entries(o.heads).filter(([, it]) => it).map(([k, it]) => ({ k, cx: (it.x0 + it.x1) / 2 }));
+    const colOf = it => { const cx = (it.x0 + it.x1) / 2; let best = null, d = 1e9; H.forEach(h => { const dd = Math.abs(h.cx - cx); if (dd < d) { d = dd; best = h.k; } }); return best; };
+    items = mergeRuns(items);
+    const body = items.filter(it => it.y0 > o.top && (!o.stop || it.y0 < o.stop) && !(o.skip && o.skip(it)));
+    const anchors = body.filter(it => colOf(it) === o.qty && /^\d{1,3}(?:[.,]\d{3})*(?:,\d+)?$|^\d+(?:[.,]\d+)?$/.test(it.t)).sort((a, b) => a.y0 - b.y0);
+    return anchors.map((a, i) => {
+      const lo = i ? (anchors[i - 1].y0 + a.y0) / 2 : o.top, hi = i + 1 < anchors.length ? (a.y0 + anchors[i + 1].y0) / 2 : (o.stop || a.y0 + 40);
+      const band = body.filter(it => it.y0 >= lo && it.y0 < hi).sort((x, y) => (x.y0 - y.y0) || (x.x0 - y.x0));
+      const cell = k => band.filter(it => colOf(it) === k);
+      return { anchor: a, cell, bc: cell(o.bc).filter(it => /^\d+$/.test(it.t)).map(it => it.t).join(''), name: o.name ? cell(o.name).map(it => it.t).join(' ') : '' };
+    });
+  }
+  // ghép chữ/số bị PDF cắt rời ("5" "," "00" -> "5,00")
+  function mergeRuns(items) {
+    const a = items.slice().sort((x, y) => (Math.round(x.y0) - Math.round(y.y0)) || (x.x0 - y.x0)), out = [];
+    a.forEach(it => { const p = out[out.length - 1]; if (p && Math.abs(p.y0 - it.y0) < 1 && it.x0 - p.x1 < 0.8 && it.x0 >= p.x0) { p.t += it.t; p.x1 = it.x1; } else out.push(Object.assign({}, it)); });
+    return out;
+  }
+  const pdfQty = t => { t = String(t).trim(); if (/^\d+,\d{1,2}$/.test(t)) return Number(t.replace(',', '.')); if (/^\d+\.\d{1,2}$/.test(t)) return Number(t); return Number(t.replace(/[.,]/g, '')); };
+  const itemAfter = (items, re, maxDx) => { const l = items.find(x => re.test(x.t)); if (!l) return null; return items.filter(x => Math.abs(x.y0 - l.y0) < 3 && x.x0 >= l.x1 - 2 && x.x0 - l.x1 < (maxDx || 200)).sort((a, b) => a.x0 - b.x0)[0] || null; };
+  const allText = items => items.slice().sort((a, b) => (a.y0 - b.y0) || (a.x0 - b.x0)).map(x => x.t).join(' ');
+  function pdfLines(rows, issues) {
+    const lines = rows.map((r, i) => {
+      const ln = stdLine(i + 1, r.bc, pdfQty(r.anchor.t), r.name);
+      if (root.FUJI && ln.barcode && /^\d{8}$|^\d{12,14}$/.test(ln.barcode) && !root.FUJI.gtinOk(ln.barcode)) ln.flags.push({ level: 'warn', msg: 'Barcode sai số kiểm tra (có thể đọc thiếu số)' });
+      return ln;
+    });
+    dupCheck(lines, issues);
+    return lines;
+  }
+
+  function parseAeonFantasy(acct, items, fileName) {
+    const issues = [];
+    const F = re => items.find(x => re.test(x.t));
+    const hBc = F(/^barcode$/i) || F(/^mã hàng$/i), hQty = F(/^qty$/i) || F(/^số lượng$/i);
+    if (!hBc || !hQty) return { error: 'Không thấy cột Barcode / Qty trên PO. File này có đúng mẫu đơn đặt hàng Aeon Fantasy không?' };
+    const heads = { stt: F(/^no\.?$/i) || F(/^stt$/i), bc: hBc, name: F(/^item name$/i) || F(/^tên hàng$/i), unit: F(/^unit$/i), qty: hQty, price: F(/^unit price$/i) || F(/^đơn giá$/i) };
+    const tot = F(/^tổng thanh toán|^total$/i);
+    const rows = pdfTable(items, { heads, qty: 'qty', bc: 'bc', name: 'name', top: Math.max(hBc.y1, hQty.y1), stop: tot ? tot.y0 - 1 : 0 });
+    if (!rows.length) return { error: 'Không thấy dòng hàng nào trên PO Aeon Fantasy.' };
+    const lines = pdfLines(rows, issues);
+    const no = (itemAfter(items, /^số\/no\.?:?$/i) || {}).t || '';
+    const orderDate = dmy((itemAfter(items, /^ngày\/date:?$/i) || {}).t);
+    const storeId = (itemAfter(items, /store id:?$/i) || {}).t || '';
+    const storeName = (itemAfter(items, /store name:?$/i) || {}).t || '';
+    const addr = items.filter(x => x.y0 > ((F(/address delivery/i) || {}).y0 || 1e9) && x.y0 < ((F(/LƯU Ý ĐỊA CHỈ/i) || {}).y0 || 0) && x.x0 > 300).map(x => x.t).join(' ');
+    let hit = null; const m = matchAddr(acct.customers, `${storeId} ${storeName} ${addr}`, acct.brandWords);
+    if (m.hit) hit = m.hit; else issues.push({ key: 'customer', level: 'err', msg: `Không dò được cửa hàng "${storeName || storeId}". Chọn ở ô Mã khách hàng (rồi bấm Ghi nhớ).` });
+    // chữ tắt cửa hàng: Store ID "AEON HUE-PRIZE" -> HUE
+    const abbr = key(storeId).replace(/^aeon\s*/, '').split(' ')[0].toUpperCase() || key(storeName).split(' ').pop().toUpperCase();
+    if (tot) {
+      const tq = items.filter(x => Math.abs(x.y0 - tot.y0) < 3 && Math.abs((x.x0 + x.x1) / 2 - (hQty.x0 + hQty.x1) / 2) < 30).map(x => x.t.replace(/\D/g, '')).filter(Boolean)[0];
+      const sum = lines.reduce((s, l) => s + (l.qty || 0), 0);
+      if (tq) issues.push(+tq === sum ? { level: 'info', msg: `Khớp tổng SL với dòng Tổng thanh toán: ${sum}.` } : { level: 'err', msg: `Tổng SL đọc được (${sum}) khác dòng Tổng trên PO (${tq}).` });
+    }
+        if (no) issues.push({ level: 'info', msg: `Số PO Aeon Fantasy: ${no}.` });
+    return { prefix: acct.prefix, seq: acct.seq, abbr, docDate: orderDate, customer: hit ? hit.code : '', store: storeName || storeId, lines, issues, source: 'pdf' };
+  }
+  function parseHinode(acct, items, fileName) {
+    const issues = [];
+    const F = re => items.find(x => re.test(x.t));
+    const hBc = F(/^barcode$/i), hQty = items.filter(x => /^số lượn/i.test(x.t)).sort((a, b) => a.x0 - b.x0)[0];
+    if (!hBc || !hQty) return { error: 'Không thấy cột Barcode / Số lượng trên PO. File này có đúng mẫu đơn đặt hàng Hinode (IMF) không?' };
+    const heads = { stt: F(/^stt$/i), item: F(/^mã hàng$/i), bc: hBc, name: F(/^tên hàng$/i), unit: F(/^đvt$/i), qty: hQty, price: F(/^đơn giá/i) };
+    const tot = F(/^giá trị chưa vat/i);
+    const rows = pdfTable(items, { heads, qty: 'qty', bc: 'bc', name: 'name', top: hBc.y1, stop: tot ? tot.y0 - 1 : 0, skip: it => /^quầy hàng/i.test(it.t) });
+    if (!rows.length) return { error: 'Không thấy dòng hàng nào trên PO Hinode.' };
+    const lines = pdfLines(rows, issues);
+    const txt = allText(items);
+    const mPo = txt.match(/SỐ\s*:\s*(POD\d{6,})/i) || txt.match(/\b(POD\d{8,})\b/) || fileName.match(/(POD\d{8,})/i);
+    const po = mPo ? mPo[1].toUpperCase() : '';
+    if (!po) issues.push({ key: 'po', level: 'err', msg: 'Không đọc được số PO (POD…). Nhập tay Số đơn.' });
+    const md = txt.match(/NGÀY\s*:\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+    const orderDate = md ? dmy(md[1]) : '';
+        const giao = dmy((itemAfter(items, /^thời gian giao hàng:?$/i) || {}).t);
+    if (giao) issues.push({ level: 'info', msg: `Phiếu ghi thời gian giao ${giao.split('-').reverse().join('/')}; ngày giao trên form = ngày về đơn + ${acct.leadDays}.` });
+    return { fixedPo: true, editable: true, po, customer: acct.fixedCustomer, store: 'Hinode Hoài Đức', docDate: orderDate, lines, issues, source: 'pdf' };
+  }
+  function parseJapaus(acct, items, fileName) {
+    const issues = [];
+    const F = re => items.find(x => re.test(x.t));
+    const hBc = F(/^mã vạch$/i), hQty = F(/^sl$/i);
+    if (!hBc || !hQty) return { error: 'Không thấy cột Mã vạch / SL trên phiếu. File này có đúng mẫu phiếu đặt hàng Japaus không?' };
+    const heads = { stt: F(/^stt$/i), sku: F(/^mã sku$/i), bc: hBc, name: F(/^tên hàng/i), unit: F(/^đvt$/i), qty: hQty, price: F(/^đơn giá$/i), amt: F(/^thành tiền$/i) };
+    const tot = F(/^cộng tiền hàng/i);
+    // bỏ tiêu đề lặp lại ở trang 2 và chữ "1/2"
+    const skip = it => /^(stt|mã sku|mã vạch|tên hàng hoá|đvt|sl|đơn giá|thành tiền|%|ck|thuế suất|\d\/\d)$/i.test(it.t);
+    const rows = pdfTable(items, { heads, qty: 'qty', bc: 'bc', name: 'name', top: hQty.y1, stop: tot ? tot.y0 - 1 : 0, skip });
+    if (!rows.length) return { error: 'Không thấy dòng hàng nào trên phiếu Japaus.' };
+    const lines = pdfLines(rows, issues);
+    const txt = allText(items);
+    const mPo = txt.match(/Số\s*:\s*(PDH)\s*(\d{3,})/i) || txt.match(/\b(PDH)(\d{3,})\b/i);
+    const po = mPo ? (mPo[1] + mPo[2]).toUpperCase() : ((fileName.match(/pdh\d+/i) || [''])[0].toUpperCase());
+    if (!po) issues.push({ key: 'po', level: 'err', msg: 'Không đọc được số phiếu (PDH…). Nhập tay Số đơn.' });
+    const md = txt.match(/Ngày\s*(\d{1,2})\s*tháng\s*(\d{1,2})\s*năm\s*(\d{4})/i);
+    const orderDate = md ? `${md[3]}-${pad(+md[2])}-${pad(+md[1])}` : '';
+        return { fixedPo: true, editable: true, po, customer: acct.fixedCustomer, store: 'Japaus 193 Tôn Dật Tiên', docDate: orderDate, lines, issues, source: 'pdf' };
+  }
+  function parseSiba(acct, items, fileName) {
+    const issues = [];
+    const F = re => items.find(x => re.test(x.t));
+    const hBc = F(/^mã vạch$/i), hQty = F(/^lượng$/i) || F(/^số lượng$/i);
+    if (!hBc || !hQty) return { error: 'Không thấy cột Mã vạch / Số lượng trên PO. File này có đúng mẫu đơn đặt hàng Siba Food không?' };
+    const heads = { stt: F(/^stt$/i), sku: F(/^mã sản$/i), bc: hBc, name: F(/^tên sản phẩm$/i), unit: F(/^đvt$/i), desc: F(/^mô tả$/i), qty: hQty, price: F(/^đơn$/i) || F(/^giá$/i), vat: F(/^vat$/i), ck: F(/^ckt$/i), amt: F(/^thành tiền$/i) };
+    const tot = F(/^tổng giá trị trước thuế/i);
+    const skip = it => /^(stt|mã sản|phẩm|mã vạch|tên sản phẩm|đvt|mô tả|mh|số|lượng|đơn|giá|vat|ckt|m|thành tiền|chưa vat|page \d+ of \d+)$/i.test(it.t);
+    const rows = pdfTable(items, { heads, qty: 'qty', bc: 'bc', name: 'name', top: hQty.y1, stop: tot ? tot.y0 - 1 : 0, skip });
+    if (!rows.length) return { error: 'Không thấy dòng hàng nào trên PO Siba Food.' };
+    const lines = pdfLines(rows, issues);
+    const po = ((itemAfter(items, /^số đơn hàng:?$/i) || {}).t || '').replace(/\D/g, '');
+    const orderDate = dmy((itemAfter(items, /^ngày đặt hàng:?$/i) || {}).t);
+    const giao = dmy((itemAfter(items, /^ngày giao hàng:?$/i) || {}).t);
+    const nhan = F(/^nơi nhận hàng:?$/i);
+    const addr = nhan ? items.filter(x => x !== nhan && x.x0 >= nhan.x0 - 2 && x.y0 >= nhan.y0 - 2 && x.y0 < nhan.y0 + 20 && !/:$/.test(x.t)).sort((a, b) => a.y0 - b.y0).map(x => x.t).join(' ') : '';
+    const m = matchAddr(acct.customers, addr, acct.brandWords);
+    if (!m.hit) issues.push({ key: 'customer', level: 'err', msg: `Cửa hàng "${addr || '?'}" chưa có mã KH trong DMKH. Chọn ở ô Mã khách hàng (rồi bấm Ghi nhớ).` });
+    if (!po) issues.push({ key: 'po', level: 'err', msg: 'Không đọc được Số đơn hàng. Nhập tay Số đơn.' });
+    if (giao) issues.push({ level: 'info', msg: `Phiếu ghi ngày giao ${giao.split('-').reverse().join('/')}; ngày giao trên form = ngày về đơn + ${acct.leadDays}.` });
+    return { fixedPo: true, editable: true, po, customer: m.hit ? m.hit.code : '', store: addr, docDate: orderDate, lines, issues, source: 'pdf' };
+  }
+  const pdfAcct = (label, fn, extra) => Object.assign({
+    label, fixedPo: true, async: true, accept: '.pdf', leadDays: 3, skipSunday: true, fromNgayVe: true, customers: [],
+    async parseFile(f, onProgress, libs) {
+      if (!/\.pdf$/i.test(f.name)) return { error: 'Account này nhận file PDF.' };
+      try { await libs.pdf(); } catch (e) { return { error: 'Không tải được bộ đọc PDF (cần internet).' }; }
+      onProgress && onProgress('Đang đọc PDF…');
+      return fn(this, await root.FUJI.pdfItems(f.buf), f.name);
+    }
+  }, extra);
+
   /* ---------- Account rules ---------- */
   const ACCOUNTS = {
     KKTC: {
@@ -1443,6 +1723,49 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
         return parseMiomio(this, items, f.name);
       }
     }
+    ,
+    FANTASY: pdfAcct('Aeon Fantasy (PDF)', parseAeonFantasy, {
+      fixedPo: false, prefix: 'AEONFTS', seq: 'dup',
+      // Số đơn: AEONFTS + chữ tắt Store ID (AEON HUE-PRIZE -> HUE) + YYMMDD ngày về đơn
+      // 7 acc này (mẫu anh Tài 13/11): ngày giao = ngày về đơn + 3, rơi Chủ nhật dời sang thứ Hai
+      brandWords: ['aeon', 'fantasy', 'fantasyaeon', 'fanasy', 'mall', 'dynalecx', 'kidzooona', 'prize', 'trung', 'tam', 'thuong', 'mai', 'tttm', 'center'],
+      customers: [{"code": "FANTASY021", "name": "Aeon Fantasy_HA NOI CENTER"}, {"code": "FANTASY001", "name": "Aeon Fantasy Bình Dương Canary"}, {"code": "FANTASY014", "name": "FANTASYAEON Sense City Can Tho & Dynalecx Cần Thơ"}, {"code": "FANTASY006", "name": "Aeon Fantasy Mall Hà Đông"}, {"code": "FANTASY010", "name": "FANTASY Vincom Mega Mall Royal City"}, {"code": "FANTASY011", "name": "FANTASY Aeon Mall Long Biên"}, {"code": "FANTASY005", "name": "Aeon Fanasy ở Hải Phòng"}, {"code": "FANTASY009", "name": "Fantasy Go Nha Trang"}, {"code": "FANTASY018", "name": "Aeon Fantasy Aeon Huế"}, {"code": "FANTASY016", "name": "FANTASYAEON_ Đại lộ V.I.Lenin"}, {"code": "FANTASY008", "name": "Aeon Fantasy Buôn Ma Thuột"}, {"code": "FANTASY007", "name": "Aeon Fantasy Sora Garden Bình Dương"}, {"code": "FANTASY004", "name": "Khu vui chơi Molly Fantasy Tầng 2, Aeon Mall Long Biên"}, {"code": "FANTASY012", "name": "FANTASYAEON Fanpekka"}, {"code": "FANTASY013", "name": "FANTASYAEON Gigamall"}, {"code": "FANTASY022", "name": "FANTASY Vincom Mega Mall Royal Island"}, {"code": "FANTASY002", "name": "Aeon Fantasy Mall Bình Tân"}, {"code": "FANTASY003", "name": "Aeon Fantasy Mall Tân Phú Celadon"}, {"code": "FANTASY019", "name": "FANTASY AEON CITIMART PHƯỚC KIẾN"}, {"code": "FANTASY017", "name": "Aeon Fantasy Parc Mall"}, {"code": "FANTASY020", "name": "FANTASY AEON CITIMART OCEAN CITY"}, {"code": "FANTASY015", "name": "FANTASYAEON 469 Nguyễn Hữu Thọ"}, {"code": "FANTASY023", "name": "FANTASY AEON TÂN AN"}]
+    }),
+    FGARDEN: {
+      label: 'Fresh Garden (FGARDEN)', prefix: 'FRESHGARDEN', seq: 'dup', noAbbr: true,
+      accept: '.xlsx,.xls', leadDays: 3, skipSunday: true, fromNgayVe: true,
+      // Số đơn: FRESHGARDEN + YYMMDD ngày về đơn · mã KH dò theo địa chỉ nhận hàng (Lai Xá -> FGARDEN0001)
+      brandWords: ['freshgarden', 'fresh', 'garden'],
+      customers: [{"code": "FGARDEN0002", "name": "FRESHGARDEN 179 Trâu Quỳ"}, {"code": "FGARDEN0003", "name": "FRESHGARDEN 113 Tô Hiệu, Hà Đông"}, {"code": "FGARDEN0004", "name": "FRESHGARDEN La Casta Văn Phú"}, {"code": "FGARDEN0005", "name": "FRESHGARDEN 93 Xuân La"}, {"code": "FGARDEN0006", "name": "FRESHGARDEN One Mount Times City"}, {"code": "FGARDEN0007", "name": "FRESHGARDEN 130 Lạc Trung"}, {"code": "FGARDEN0008", "name": "FRESHGARDEN 170 Ngô Xuân Quảng"}, {"code": "FGARDEN0009", "name": "FRESHGARDEN 147 Khương Trung"}, {"code": "FGARDEN0010", "name": "FRESHGARDEN trường ĐH Sư Phạm Hà Nội"}, {"code": "FGARDEN0011", "name": "FRESHGARDEN cánh Tây T2 Nội Bài"}, {"code": "FGARDEN0012", "name": "FRESHGARDEN Cánh đông T2 Nội bài"}, {"code": "FGARDEN0013", "name": "FRESHGARDEN Cánh B T1 Nội Bài"}, {"code": "FGARDEN0014", "name": "FRESHGARDEN VinsFRESHGARDENool Tiểu học Sài Đồng"}, {"code": "FGARDEN0015", "name": "FRESHGARDEN trường ĐH Vinuni Oceanpark"}, {"code": "FGARDEN0016", "name": "FRESHGARDEN VinsFRESHGARDENool Metropolis Liễu Giai"}, {"code": "FGARDEN0017", "name": "FRESHGARDEN VinsFRESHGARDENool T36 Time City"}, {"code": "FGARDEN0018", "name": "FRESHGARDEN VinsFRESHGARDENool T37 Times City"}, {"code": "FGARDEN0019", "name": "FRESHGARDEN 14 Ngô Thì Nhậm- Hà Đông"}, {"code": "FGARDEN0020", "name": "FRESHGARDEN 174 Hoàng Văn Thái"}, {"code": "FGARDEN0021", "name": "FRESHGARDEN Bệnh viện E bánh"}, {"code": "FGARDEN0022", "name": "FRESHGARDEN 135 Cổ Nhuế"}, {"code": "FGARDEN0023", "name": "FRESHGARDEN 300B Cầu Giấy"}, {"code": "FGARDEN0024", "name": "FRESHGARDEN 76 Ngụy Như Kom Tum"}, {"code": "FGARDEN0025", "name": "FRESHGARDEN 183 Tô Hiệu"}, {"code": "FGARDEN0026", "name": "FRESHGARDEN 28 Lê Văn Lương"}, {"code": "FGARDEN0027", "name": "FRESHGARDEN S2-08 Vinhomes Ocean Park"}, {"code": "FGARDEN0028", "name": "FRESHGARDEN 20 Láng Hạ"}, {"code": "FGARDEN0029", "name": "FRESHGARDEN 112 C2 Phạm Ngọc ThạFRESHGARDEN"}, {"code": "FGARDEN0030", "name": "FRESHGARDEN 18- BT11 Xa La"}, {"code": "FGARDEN0031", "name": "FRESHGARDEN 430 Vạn Phúc"}, {"code": "FGARDEN0032", "name": "FRESHGARDEN 16 Hàng Cót"}, {"code": "FGARDEN0033", "name": "FRESHGARDEN 42 Nguyễn Sơn"}, {"code": "FGARDEN0034", "name": "FRESHGARDEN 32 Trần Thái Tông"}, {"code": "FGARDEN0035", "name": "FRESHGARDEN 78 Kim Ngưu"}, {"code": "FGARDEN0036", "name": "FRESHGARDEN 65 Lạc Long Quân"}, {"code": "FGARDEN0037", "name": "FRESHGARDEN 36 Nguyễn Hoàng"}, {"code": "FGARDEN0038", "name": "FRESHGARDEN 440 BạFRESHGARDEN Mai"}, {"code": "FGARDEN0039", "name": "FRESHGARDEN CT12A Kim Văn Kim Lũ"}, {"code": "FGARDEN0040", "name": "FRESHGARDEN 41 Âu Cơ"}, {"code": "FGARDEN0041", "name": "FRESHGARDEN HH1B Linh Đàm"}, {"code": "FGARDEN0042", "name": "FRESHGARDEN 272 Thượng Đình"}, {"code": "FGARDEN0043", "name": "FRESHGARDEN 47 Lò Đúc"}, {"code": "FGARDEN0044", "name": "FRESHGARDEN 140 Lê Trọng Tấn"}, {"code": "FGARDEN0045", "name": "FRESHGARDEN 110 Thái Thịnh"}, {"code": "FGARDEN0046", "name": "FRESHGARDEN Vinmec Times City"}, {"code": "FGARDEN0047", "name": "FRESHGARDEN Green Bay"}, {"code": "FGARDEN0048", "name": "FRESHGARDEN 112 B4 Tôn Thất Tùng"}, {"code": "FGARDEN0049", "name": "FRESHGARDEN 19 dãy 16B4 Nguyễn Văn Lộc"}, {"code": "FGARDEN0050", "name": "FRESHGARDEN 46 An Dương"}, {"code": "FGARDEN0051", "name": "FRESHGARDEN T6 Times City"}, {"code": "FGARDEN0052", "name": "FRESHGARDEN 6 Tông Đản"}, {"code": "FGARDEN0053", "name": "FRESHGARDEN 102 FRESHGARDENiến Thắng"}, {"code": "FGARDEN0054", "name": "FRESHGARDEN 324 Xã Đàn"}, {"code": "FGARDEN0055", "name": "FRESHGARDEN 34 Hoàng Cầu"}, {"code": "FGARDEN0056", "name": "FRESHGARDEN Ngã tư Trôi"}, {"code": "FGARDEN0057", "name": "FRESHGARDEN 53 Kim Đồng"}, {"code": "FGARDEN0058", "name": "FRESHGARDEN 58 Nguyễn Khuyến"}, {"code": "FGARDEN0059", "name": "FRESHGARDEN S2 Vinhomes Symphony"}, {"code": "FGARDEN0060", "name": "FRESHGARDEN 287 Trần Đăng Ninh"}, {"code": "FGARDEN0061", "name": "FRESHGARDEN 71 Nguyễn An Ninh"}, {"code": "FGARDEN0062", "name": "FRESHGARDEN 65 Nguyễn FRESHGARDENí Thanh"}, {"code": "FGARDEN0063", "name": "FRESHGARDEN 44 Nguyễn Khánh Toàn"}, {"code": "FGARDEN0064", "name": "FRESHGARDEN 111 Núi Trúc"}, {"code": "FGARDEN0065", "name": "FRESHGARDEN 20C Trần Duy Hưng"}, {"code": "FGARDEN0066", "name": "FRESHGARDEN 41 Doãn Kế Thiện"}, {"code": "FGARDEN0067", "name": "FRESHGARDEN Bệnh viện E cafe"}, {"code": "FGARDEN0068", "name": "FRESHGARDEN TRÀNG THI"}, {"code": "FGARDEN0095", "name": "FRESHGARDEN 108 HỒ TÙNG MẬU"}, {"code": "FGARDEN0069", "name": "FRESHGARDEN 21B5 GREEN STAR"}, {"code": "FGARDEN0070", "name": "FRESHGARDEN 106 THÀNH CÔNG"}, {"code": "FGARDEN0071", "name": "FRESHGARDEN 72 NGUYỄN TUÂN"}, {"code": "FGARDEN0072", "name": "FRESHGARDEN S201 SMART CITY"}, {"code": "FGARDEN0073", "name": "FRESHGARDEN VINMEC SMART CITY"}, {"code": "FGARDEN0074", "name": "FRESHGARDEN TRUNG HỌC VINS SMART CITY"}, {"code": "FGARDEN0075", "name": "FRESHGARDEN TIỂU HỌC VINS SMART CITY"}, {"code": "FGARDEN0076", "name": "FRESHGARDEN 106 CHÙA LÁNG"}, {"code": "FGARDEN0077", "name": "FRESHGARDEN MASTERI TÂY MỖ"}, {"code": "FGARDEN0078", "name": "FRESHGARDEN G6 SMART CITY"}, {"code": "FGARDEN0079", "name": "FRESHGARDEN 66 TRẦN CUNG"}, {"code": "FGARDEN0080", "name": "FRESHGARDEN ADELAIDE"}, {"code": "FGARDEN0081", "name": "FRESHGARDEN LACASA VĂN KHÊ"}, {"code": "FGARDEN0082", "name": "FRESHGARDEN CT8 ĐẠI THANH"}, {"code": "FGARDEN0083", "name": "FRESHGARDEN 360 BẠCH MAI"}, {"code": "FGARDEN0084", "name": "FRESHGARDEN 11 TRẦN NGUYÊN ĐÁN"}, {"code": "FGARDEN0085", "name": "FRESHGARDEN VINSCHOOL OCEAN PART GIA LÂM"}, {"code": "FGARDEN0086", "name": "FRESHGARDEN TRUNG HỌC VINSCHOOL OCEAN PART GIA LÂM"}, {"code": "FGARDEN0087", "name": "FRESHGARDEN VINSCHOOL SÀI ĐỒNG"}, {"code": "FGARDEN0088", "name": "FRESHGARDEN TRƯỜNG PHỔ THÔNG VINSCHOOL OCEAN PART 2"}, {"code": "FGARDEN0089", "name": "FRESHGARDEN 08 HH3A KĐT LINH ĐÀM"}, {"code": "FGARDEN0090", "name": "FRESHGARDEN 90 SÀI ĐỒNG"}, {"code": "FGARDEN0091", "name": "FRESHGARDEN S1-09 VINHOMES OCEAN PART GIA LÂM"}, {"code": "FGARDEN0092", "name": "FRESHGARDEN R103 ZEN PARK"}, {"code": "FGARDEN0093", "name": "FRESHGARDEN 42W LÝ THƯỜNG KIỆT"}, {"code": "FGARDEN0094", "name": "FRESHGARDEN 46 NGUYỄN ĐỨC CẢNH"}, {"code": "FGARDEN0001", "name": "FRESHGARDEN Lô 8 cụm CN Lai Xá"}],
+      parse(wb, fileName) { return parseFreshGarden(this, wb, fileName || ''); }
+    },
+    HIENLUONG: {
+      label: 'Hiền Lương (.xls)', prefix: 'HIENLUONG', seq: 'dup', noAbbr: true,
+      accept: '.xls,.xlsx', leadDays: 3, skipSunday: true, fromNgayVe: true,
+      fixedCustomer: 'HIENLUONG0001',
+      customers: [{ code: 'HIENLUONG0001', name: 'HIENLUONG Hòa Xá' }],
+      parse(wb, fileName) { return parseHienLuong(this, wb, fileName || ''); }
+    },
+    HINODE: pdfAcct('Hinode (PDF)', parseHinode, {
+      fixedCustomer: 'HINODE0001', customers: [{ code: 'HINODE0001', name: 'HINODE HOÀI ĐỨC' }]
+    }),
+    JAPAUS: pdfAcct('Japaus (PDF)', parseJapaus, {
+      fixedCustomer: 'JAPAUS00001', customers: [{ code: 'JAPAUS00001', name: 'JAPAUS_193 Tôn Dật Tiên' }]
+    }),
+    SAKUKO: {
+      label: 'Sakuko (SAKUKO)', prefix: 'SAKUKO', seq: 'always',
+      accept: '.xlsx,.xls', leadDays: 3, skipSunday: true, fromNgayVe: true,
+      // Số đơn: SAKUKO + chữ tắt cửa hàng (Hàng Bông -> HB) + YYMMDD ngày về đơn + -01
+      brandWords: ['sakuko', 'daily', 'mart'],
+      customers: [{"code": "SAKUKO0004", "name": "SAKUKO DAILY 165 XUÂN THỦY"}, {"code": "SAKUKO0005", "name": "SAKUKO DAILY NGUYỄN CÔNG HOAN"}, {"code": "SAKUKO0006", "name": "SAKUKO MART HÀNG BÔNG"}, {"code": "SAKUKO0001", "name": "SAKUKO DAILY 34 VŨ PHẠM HÀM"}, {"code": "SAKUKO0002", "name": "SAKUKO 126 LÊ TRỌNG TẤN"}, {"code": "SAKUKO0003", "name": "SAKUKO DAILY LING LANG"}],
+      parse(wb, fileName) { return parseSakuko(this, wb, fileName || ''); }
+    },
+    SIBA: pdfAcct('Siba Food (PDF)', parseSiba, {
+      // Số đơn = "Số đơn hàng" trên phiếu (chờ anh Tài chốt) · mã KH dò theo "Nơi nhận hàng"
+      brandWords: ['siba', 'sibafood', 'food'],
+      customers: [{"code": "SIBA010", "name": "SIBA_Nguyễn Thái Học"}, {"code": "SIBA004", "name": "SIBA Đặng Thái Thân"}, {"code": "SIBA005", "name": "SIBA An Dương Vương"}, {"code": "SIBA006", "name": "SIBA Hà Huy Tập"}, {"code": "SIBA007", "name": "SIBA Nguyễn Văn Cừ"}, {"code": "SIBA008", "name": "SIBA Nguyễn Trãi"}, {"code": "SIBA009", "name": "SIBA Nguyễn Trãi_Tổng kho hàng khô"}, {"code": "SIBAFOOD003", "name": "SIBA - SUNRISE"}, {"code": "SIBAFOOD004", "name": "SIBA - WESTGATE"}, {"code": "SIBAFOOD005", "name": "SIBA - MIZUKI"}, {"code": "SIBAFOOD006", "name": "SIBA - RESIDEN"}, {"code": "SIBAFOOD001", "name": "SIBA - Grand Park - GH201"}, {"code": "SIBAFOOD002", "name": "SIBA - Grand Park - BS1001"}, {"code": "SIBAFOOD011", "name": "SIBA - Lê Văn Khương"}, {"code": "SIBAFOOD012", "name": "SIBA - Chung cư Ehome 5"}, {"code": "SIBAFOOD008", "name": "SIBA - Green Town"}, {"code": "SIBAFOOD009", "name": "SIBA - Goldora Plaza"}, {"code": "SIBAFOOD007", "name": "SIBA - Grand Park - S06"}, {"code": "SIBAFOOD010", "name": "SIBA - Lê Đức Thọ"}]
+    })
+
   };
 
   function parseAeonCsv(buf) {
@@ -1632,7 +1955,7 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
 (function (root) {
   const BASE = 'data/';
   const FILES = { dmkh: 'DMKH.xlsx', dmsp: 'DMSP.xlsx', map: 'Code chuyển đổi.xlsx', tpl: 'Form final.xlsx' };
-  const PREFIX = { KKTC: 'KKTC', MOR: 'MORGT', BRG: 'BRGMART', AEON: 'AEON', SOIBIEN: 'SOIBIEN', ANNHIEN: 'ANHN', MIOMIO: 'MIOMIOW' };
+  const PREFIX = { KKTC: 'KKTC', MOR: 'MORGT', BRG: 'BRGMART', AEON: 'AEON', SOIBIEN: 'SOIBIEN', ANNHIEN: 'ANHN', MIOMIO: 'MIOMIOW', FANTASY: 'FANTASY', FGARDEN: 'FGARDEN', HIENLUONG: 'HIENLUONG', HINODE: 'HINODE', JAPAUS: 'JAPAUS', SAKUKO: 'SAKUKO', SIBA: 'SIBA' };
   const LABEL = { dmkh: 'DMKH', dmsp: 'DMSP', map: 'Code chuyển đổi', tpl: 'Form final' };
   const CACHE = 'ffm-data-v1:';
   // Google Apps Script: thống kê + bảng "Code AEON" team tự thêm
@@ -1788,6 +2111,8 @@ const libs = {
   tessOpts: LIBS.tessOpts
 };
 const $ = id => document.getElementById(id);
+  // ngày giao = ngày gốc + leadDays; acc có skipSunday: rơi vào Chủ nhật thì dời sang thứ Hai
+  const dueDate = (base, a) => { const d = addDays(new Date(base + 'T00:00'), a.leadDays); if (a.skipSunday && d.getDay() === 0) d.setDate(d.getDate() + 1); return toISO(d); };
 // thống kê: gửi số liệu (không có nội dung đơn) về Google Sheet "FFM Chuyển Đơn - Thống kê"
 const LOG_URL = window.FFM_API || '';
 const state = { files: [], results: [], demo: true, filter: 'all' };
@@ -1807,7 +2132,7 @@ const acctNote = () => {
   const a = ACCOUNTS[sel.value];
   $('acctNote').textContent = 'Nhận file ' + a.accept.replace(/,/g,', ') + ' · DMKH ' + a.customers.length + ' cửa hàng.';
   $('mapBox').hidden = !a.aeon;
-  $('nvNote').textContent = (a.fixedPo || a.noAbbr) ? `Account này lấy ngày đặt in trên đơn (ngày giao = ngày đặt + ${a.leadDays}). Ô này chỉ dùng khi không đọc được ngày đặt.` : 'Dùng cho số đơn (YYMMDD) và ngày giao = ngày về đơn + 4.';
+  $('nvNote').textContent = a.fromNgayVe ? `Dùng cho số đơn (YYMMDD) và ngày giao = ngày về đơn + ${a.leadDays}${a.skipSunday ? ' (rơi vào Chủ nhật thì dời sang thứ Hai)' : ''}.` : (a.fixedPo || a.noAbbr) ? `Account này lấy ngày đặt in trên đơn (ngày giao = ngày đặt + ${a.leadDays}). Ô này chỉ dùng khi không đọc được ngày đặt.` : 'Dùng cho số đơn (YYMMDD) và ngày giao = ngày về đơn + 4.';
   if (a.aeon) { const nS = Object.keys(window.FFM_AEON_MAP_SHARED || {}).length; $('mapNote').textContent = `Bảng Code chuyển đổi: ${Object.keys(window.FFM_AEON_MAP_USER || window.FFM_AEON_MAP || {}).length} mã (${mapInfo})` + (nS ? ` + ${nS} mã team thêm.` : '.'); }
 };
 $('mapBtn').addEventListener('click', () => $('mapIn').click());
@@ -1834,7 +2159,7 @@ $('ngayVe').addEventListener('change', () => { if (!state.demo) { recompute(true
 function recompute(resetDelivery){
   const acct = ACCOUNTS[sel.value], nv = $('ngayVe').value;
   assignPO(state.results, nv);
-  state.results.forEach(r => { const base = r.orderDate || nv; if (!r.error && (resetDelivery || !r.delivery) && base) r.delivery = toISO(addDays(new Date(base+'T00:00'), acct.leadDays)); });
+  state.results.forEach(r => { const base = r.orderDate || nv; if (!r.error && (resetDelivery || !r.delivery) && base) r.delivery = dueDate(base, acct); });
 }
 sel.addEventListener('change', () => { try{localStorage.setItem('ffm-acct', sel.value)}catch(e){}; acctNote(); });
 acctNote();
@@ -2021,7 +2346,7 @@ $('addBtn').addEventListener('click', () => {
   $('addBc').value = ''; $('addPc').value = ''; acctNote();
 });
 // Mã KH: team tự thêm (chọn tay ở ô Mã khách hàng là tự lưu; hoặc thêm trong ô "+ Thêm mã khách hàng")
-const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/, ANNHIEN: /^ANHN/, MIOMIO: /^MIOMIOW/ };
+const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/, ANNHIEN: /^ANHN/, MIOMIO: /^MIOMIOW/, FANTASY: /^FANTASY/, FGARDEN: /^FGARDEN/, HIENLUONG: /^HIENLUONG/, HINODE: /^HINODE/, JAPAUS: /^JAPAUS/, SAKUKO: /^SAKUKO/, SIBA: /^SIBA/ };
 function saveCust(acctKey, code, store){
   const list = (window.FFM_CUST_SHARED || []).filter(x => !(x.acct === acctKey && x.name.trim().toLowerCase() === store.trim().toLowerCase()));
   list.push({ acct: acctKey, code, name: store.trim() });
@@ -2159,7 +2484,7 @@ function card(r, idx){
     if (r.demo) inp.disabled = true;
     inp.addEventListener('change', () => {
       r[key] = type==='text' ? inp.value.trim().toUpperCase() : inp.value;
-      if (key==='poDate') { r.orderDate = r.poDate; const a = ACCOUNTS[r.acctKey || sel.value]; if (r.poDate) r.delivery = toISO(addDays(new Date(r.poDate+'T00:00'), a.leadDays)); }
+      if (key==='poDate') { r.orderDate = r.poDate; const a = ACCOUNTS[r.acctKey || sel.value]; if (r.poDate) r.delivery = dueDate(r.poDate, a); }
       if (key==='abbr' || key==='poDate') recompute(false); render(); });
     return el('div', {}, el('label', {class:'k', for:id, text:label}), inp);
   };

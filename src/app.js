@@ -15,6 +15,8 @@ const libs = {
   tessOpts: LIBS.tessOpts
 };
 const $ = id => document.getElementById(id);
+  // ngày giao = ngày gốc + leadDays; acc có skipSunday: rơi vào Chủ nhật thì dời sang thứ Hai
+  const dueDate = (base, a) => { const d = addDays(new Date(base + 'T00:00'), a.leadDays); if (a.skipSunday && d.getDay() === 0) d.setDate(d.getDate() + 1); return toISO(d); };
 // thống kê: gửi số liệu (không có nội dung đơn) về Google Sheet "FFM Chuyển Đơn - Thống kê"
 const LOG_URL = window.FFM_API || '';
 const state = { files: [], results: [], demo: true, filter: 'all' };
@@ -34,7 +36,7 @@ const acctNote = () => {
   const a = ACCOUNTS[sel.value];
   $('acctNote').textContent = 'Nhận file ' + a.accept.replace(/,/g,', ') + ' · DMKH ' + a.customers.length + ' cửa hàng.';
   $('mapBox').hidden = !a.aeon;
-  $('nvNote').textContent = (a.fixedPo || a.noAbbr) ? `Account này lấy ngày đặt in trên đơn (ngày giao = ngày đặt + ${a.leadDays}). Ô này chỉ dùng khi không đọc được ngày đặt.` : 'Dùng cho số đơn (YYMMDD) và ngày giao = ngày về đơn + 4.';
+  $('nvNote').textContent = a.fromNgayVe ? `Dùng cho số đơn (YYMMDD) và ngày giao = ngày về đơn + ${a.leadDays}${a.skipSunday ? ' (rơi vào Chủ nhật thì dời sang thứ Hai)' : ''}.` : (a.fixedPo || a.noAbbr) ? `Account này lấy ngày đặt in trên đơn (ngày giao = ngày đặt + ${a.leadDays}). Ô này chỉ dùng khi không đọc được ngày đặt.` : 'Dùng cho số đơn (YYMMDD) và ngày giao = ngày về đơn + 4.';
   if (a.aeon) { const nS = Object.keys(window.FFM_AEON_MAP_SHARED || {}).length; $('mapNote').textContent = `Bảng Code chuyển đổi: ${Object.keys(window.FFM_AEON_MAP_USER || window.FFM_AEON_MAP || {}).length} mã (${mapInfo})` + (nS ? ` + ${nS} mã team thêm.` : '.'); }
 };
 $('mapBtn').addEventListener('click', () => $('mapIn').click());
@@ -61,7 +63,7 @@ $('ngayVe').addEventListener('change', () => { if (!state.demo) { recompute(true
 function recompute(resetDelivery){
   const acct = ACCOUNTS[sel.value], nv = $('ngayVe').value;
   assignPO(state.results, nv);
-  state.results.forEach(r => { const base = r.orderDate || nv; if (!r.error && (resetDelivery || !r.delivery) && base) r.delivery = toISO(addDays(new Date(base+'T00:00'), acct.leadDays)); });
+  state.results.forEach(r => { const base = r.orderDate || nv; if (!r.error && (resetDelivery || !r.delivery) && base) r.delivery = dueDate(base, acct); });
 }
 sel.addEventListener('change', () => { try{localStorage.setItem('ffm-acct', sel.value)}catch(e){}; acctNote(); });
 acctNote();
@@ -248,7 +250,7 @@ $('addBtn').addEventListener('click', () => {
   $('addBc').value = ''; $('addPc').value = ''; acctNote();
 });
 // Mã KH: team tự thêm (chọn tay ở ô Mã khách hàng là tự lưu; hoặc thêm trong ô "+ Thêm mã khách hàng")
-const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/, ANNHIEN: /^ANHN/, MIOMIO: /^MIOMIOW/ };
+const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/, ANNHIEN: /^ANHN/, MIOMIO: /^MIOMIOW/, FANTASY: /^FANTASY/, FGARDEN: /^FGARDEN/, HIENLUONG: /^HIENLUONG/, HINODE: /^HINODE/, JAPAUS: /^JAPAUS/, SAKUKO: /^SAKUKO/, SIBA: /^SIBA/ };
 function saveCust(acctKey, code, store){
   const list = (window.FFM_CUST_SHARED || []).filter(x => !(x.acct === acctKey && x.name.trim().toLowerCase() === store.trim().toLowerCase()));
   list.push({ acct: acctKey, code, name: store.trim() });
@@ -386,7 +388,7 @@ function card(r, idx){
     if (r.demo) inp.disabled = true;
     inp.addEventListener('change', () => {
       r[key] = type==='text' ? inp.value.trim().toUpperCase() : inp.value;
-      if (key==='poDate') { r.orderDate = r.poDate; const a = ACCOUNTS[r.acctKey || sel.value]; if (r.poDate) r.delivery = toISO(addDays(new Date(r.poDate+'T00:00'), a.leadDays)); }
+      if (key==='poDate') { r.orderDate = r.poDate; const a = ACCOUNTS[r.acctKey || sel.value]; if (r.poDate) r.delivery = dueDate(r.poDate, a); }
       if (key==='abbr' || key==='poDate') recompute(false); render(); });
     return el('div', {}, el('label', {class:'k', for:id, text:label}), inp);
   };

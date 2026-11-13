@@ -85,7 +85,7 @@
   // các đoạn chữ của PDF giữ nguyên từng ô (không tách theo dấu cách) — dùng cho PO Miomio
   async function pdfItems(buf) {
     const pdfjsLib = root.pdfjsLib;
-    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise;
+    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf).slice(), isEvalSupported: false }).promise;
     const out = [];
     for (let pn = 1; pn <= doc.numPages; pn++) {
       const page = await doc.getPage(pn);
@@ -103,7 +103,7 @@
 
   async function pdfWords(buf) {
     const pdfjsLib = root.pdfjsLib;
-    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise;
+    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf).slice(), isEvalSupported: false }).promise;
     const page = await doc.getPage(1);
     const vp = page.getViewport({ scale: 1 });
     const tc = await page.getTextContent();
@@ -391,7 +391,7 @@
 
   async function aeonPdfParse(buf, onProgress, tessOpts) {
     const pdfjsLib = root.pdfjsLib;
-    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise;
+    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf).slice(), isEvalSupported: false }).promise;
     onProgress && onProgress('Đang tải bộ nhận dạng chữ…');
     const worker = await getWorker(tessOpts);
     const S = 3, toks = [];
