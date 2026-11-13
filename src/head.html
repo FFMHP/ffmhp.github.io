@@ -220,4 +220,54 @@ label.step.done i{background:var(--ok);border-color:var(--ok);color:#fff}
 .foot{padding-bottom:170px}
 @media (max-width:560px){.scene{height:90px}}
 .tiles2{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.social{max-width:680px;margin:0 auto;display:grid;gap:14px}
+.composer textarea{width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:inherit;resize:none;background:var(--bg);color:var(--fg);min-height:72px}
+.composer textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+.composer.over{outline:2px dashed var(--accent)}
+.composer-f{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+.composer-f .note{flex:1;min-width:0}
+.feed-state{margin:8px 0 0;min-height:1em}
+.pv-list{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.pv{position:relative;width:84px;height:84px;border-radius:8px;overflow:hidden;background:var(--bg);border:1px solid var(--line)}
+.pv img,.pv video{width:100%;height:100%;object-fit:cover;display:block}
+.pv-x{position:absolute;top:3px;right:3px;width:22px;height:22px;padding:0;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;border:0;font-size:15px;line-height:1}
+.feed{display:grid;gap:14px}
+.feed-empty{text-align:center;color:var(--muted)}
+.post{padding:14px 16px}
+.post-h{display:flex;align-items:center;gap:10px}
+.post-h .avatar{width:38px;height:38px;font-size:1rem}
+.post-who{flex:1;display:flex;flex-direction:column;line-height:1.25}
+button.ghost{background:transparent;border-color:transparent;color:var(--muted);font-weight:500}
+button.ghost:hover{border-color:var(--line)}
+button.danger{color:var(--err);border-color:var(--err)}
+.post-text{margin:10px 0 0;white-space:pre-wrap;word-break:break-word;line-height:1.5}
+.media{display:grid;gap:3px;margin:10px -16px 0;background:var(--line)}
+.media.n2{grid-template-columns:1fr 1fr}.media.n3{grid-template-columns:1fr 1fr}.media.n3 .mcell:first-child{grid-column:1/-1}.media.n4{grid-template-columns:1fr 1fr}
+.mcell{position:relative;background:var(--bg);min-height:120px}
+.media.n1 .mcell{min-height:0}
+.mimg{display:block;width:100%;height:100%;padding:0;border:0;border-radius:0;background:none;cursor:zoom-in}
+.mimg img{display:block;width:100%;height:100%;max-height:560px;object-fit:cover}
+.media:not(.n1) .mimg img{aspect-ratio:1/1}.media.n3 .mcell:first-child .mimg img{aspect-ratio:2/1}
+.mcell.vid{aspect-ratio:16/9}.mcell.vid iframe{width:100%;height:100%;border:0;display:block}
+.more{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.45);color:#fff;font-size:1.8rem;font-weight:700;cursor:pointer}
+.post-cnt{margin-top:8px}
+.post-act{display:flex;gap:4px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:8px;padding:3px 0}
+.act{flex:1;background:transparent;border:0;color:var(--muted);font-weight:600;padding:8px}
+.act:hover{background:var(--bg)}.act.on{color:var(--accent)}
+.cmts{display:grid;gap:8px;margin-top:10px}
+.cmt{display:flex;gap:8px;align-items:flex-start}
+.avatar.sm{width:28px;height:28px;flex:none;font-size:.8rem}
+.cmt-b{background:var(--bg);border-radius:14px;padding:6px 12px;display:flex;flex-direction:column;max-width:80%;word-break:break-word}
+.cmt-b b{font-size:.85rem}
+.cmt>.note{align-self:center;white-space:nowrap}
+.cmt-new{display:flex;gap:8px}
+.cmt-new input{flex:1;min-width:0;border:1px solid var(--line);border-radius:99px;padding:7px 14px;font:inherit;background:var(--bg);color:var(--fg)}
+.lightbox{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.88);display:grid;place-items:center}
+.lightbox[hidden]{display:none}
+.lightbox img{max-width:92vw;max-height:86vh;object-fit:contain}
+.lb-btn{position:absolute;background:rgba(255,255,255,.12);color:#fff;border:0;border-radius:50%;width:44px;height:44px;padding:0;font-size:28px;line-height:1}
+.lb-btn[hidden]{display:none}
+.lb-close{top:14px;right:14px}.lb-prev{left:14px;top:50%}.lb-next{right:14px;top:50%}
+.lb-open{position:absolute;bottom:16px;color:#fff;font-size:.9rem}
+@media (max-width:560px){.media{margin:10px -16px 0}.cmt>.note{display:none}}
 </style>

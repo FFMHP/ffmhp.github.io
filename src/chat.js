@@ -8,7 +8,8 @@
   const ROUTES = {
     '': { page: 'pageHome', room: 'tong', title: 'Chat chung FFM', doc: 'Công cụ team FFM' },
     'don-hang': { page: 'pageOrders', room: 'donhang', title: 'Chat team đơn hàng', doc: 'FFM Chuyển Đơn' },
-    'khac': { page: 'pageOther', room: 'khac', title: 'Chat team khác', doc: 'FFM · Team khác' }
+    'khac': { page: 'pageOther', room: 'khac', title: 'Chat team khác', doc: 'FFM · Team khác' },
+    'sinh-hoat': { page: 'pageSocial', room: 'tong', title: 'Chat chung FFM', doc: 'FFM · Sinh hoạt chung' }
   };
   const API = window.FFM_API || '';
   const box = $('chatBox'), list = $('chatList'), inp = $('chatIn'), btn = $('chatBtn'), badge = $('chatBadge');
@@ -25,6 +26,7 @@
     Object.values(ROUTES).forEach(x => { $(x.page).hidden = x.page !== R.page; });
     document.querySelectorAll('.nav a').forEach(a => { const on = a.dataset.route === (ROUTES[key] ? key : ''); a.classList.toggle('on', on); if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
     if (R.page === 'pageHome') loadStats();
+    if (window.FFM_social) { if (R.page === 'pageSocial') window.FFM_social.show(); else window.FFM_social.hide(); }
     document.title = R.doc;
     window.scrollTo(0, 0);
     setRoom(R.room, R.title);

@@ -44,6 +44,7 @@
       <a href="#/" data-route="">Trang chủ</a>
       <a href="#/don-hang" data-route="don-hang">Team đơn hàng</a>
       <a href="#/khac" data-route="khac">Team khác</a>
+      <a href="#/sinh-hoat" data-route="sinh-hoat">Sinh hoạt chung</a>
     </nav>
     <div class="user">
       <button type="button" class="user-btn" id="userBtn" aria-haspopup="true" aria-expanded="false"><span class="avatar" id="userAv">?</span><span id="userName">Nhập tên</span></button>
@@ -75,6 +76,11 @@
       <b>Team khác</b>
       <small>Các công cụ cho những nhóm khác trong FFM.</small>
     </a>
+    <a class="team" href="#/sinh-hoat">
+      <span class="team-ic" aria-hidden="true">🎉</span>
+      <b>Sinh hoạt chung</b>
+      <small>Ảnh, video, status của cả phòng. Thích và bình luận như Facebook.</small>
+    </a>
   </nav>
   <section class="panel stats" aria-label="Hoạt động hôm nay">
     <div class="stats-h"><b>Hôm nay</b><span class="note" id="statsNote">Đang tải…</span></div>
@@ -83,6 +89,36 @@
       <div class="tile"><span class="tile-l">🧩 Team khác</span><span class="tile-n" id="stKhac">–</span><span class="tile-l">thao tác hôm nay</span></div>
     </div>
   </section>
+</div>
+
+<div class="wrap page" id="pageSocial" hidden>
+  <header>
+    <div>
+      <h1>Sinh hoạt <span>chung</span></h1>
+      <p class="sub">Ảnh, video và chuyện vui của cả phòng FFM. Trang web công khai, ai có link đều xem được, nên đừng đăng thông tin nội bộ hay nhạy cảm.</p>
+    </div>
+  </header>
+  <div class="social">
+    <section class="panel composer" id="composer" aria-label="Đăng bài">
+      <textarea id="postText" rows="3" maxlength="3000" placeholder="Bạn đang nghĩ gì? Chia sẻ với cả phòng…" aria-label="Nội dung bài đăng"></textarea>
+      <div class="pv-list" id="postPrev" hidden></div>
+      <div class="composer-f">
+        <button type="button" class="small" id="postAdd">🖼️ Ảnh/video</button>
+        <input type="file" id="postFiles" accept="image/*,video/*" multiple hidden>
+        <span class="note">Kéo thả hoặc dán ảnh vào đây · video tối đa 20 MB</span>
+        <button type="button" class="primary small" id="postSend" disabled>Đăng</button>
+      </div>
+      <p class="note feed-state" id="feedState" role="status" aria-live="polite"></p>
+    </section>
+    <div id="feed" class="feed" aria-label="Bảng tin"></div>
+  </div>
+</div>
+<div class="lightbox" id="lightbox" hidden role="dialog" aria-label="Xem ảnh">
+  <button type="button" class="lb-btn lb-close" id="lbClose" aria-label="Đóng">×</button>
+  <button type="button" class="lb-btn lb-prev" id="lbPrev" aria-label="Ảnh trước">‹</button>
+  <img id="lbImg" alt="">
+  <button type="button" class="lb-btn lb-next" id="lbNext" aria-label="Ảnh sau">›</button>
+  <a class="lb-open" id="lbOpen" target="_blank" rel="noopener">Mở ảnh gốc ↗</a>
 </div>
 
 <div class="wrap page" id="pageOther" hidden>
@@ -172,7 +208,7 @@
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v40</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v41</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
