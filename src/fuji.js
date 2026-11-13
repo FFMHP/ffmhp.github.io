@@ -82,6 +82,25 @@
   }
 
   /* ---------- PDF: lấy chữ + toạ độ bằng pdf.js ---------- */
+  // các đoạn chữ của PDF giữ nguyên từng ô (không tách theo dấu cách) — dùng cho PO Miomio
+  async function pdfItems(buf) {
+    const pdfjsLib = root.pdfjsLib;
+    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise;
+    const out = [];
+    for (let pn = 1; pn <= doc.numPages; pn++) {
+      const page = await doc.getPage(pn);
+      const vp = page.getViewport({ scale: 1 });
+      const tc = await page.getTextContent();
+      for (const it of tc.items) {
+        const str = (it.str || '').trim(); if (!str) continue;
+        const [, , , , e, f] = it.transform; const h = it.height || Math.abs(it.transform[3]) || 8;
+        const y1 = vp.height - f + (pn - 1) * 10000;
+        out.push({ t: str, x0: e, x1: e + (it.width || str.length * h * 0.5), y0: y1 - h, y1, page: pn });
+      }
+    }
+    return out;
+  }
+
   async function pdfWords(buf) {
     const pdfjsLib = root.pdfjsLib;
     const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise;
@@ -447,6 +466,6 @@
   }
 
   root.__lastAeonItems = null;
-  const api = { kktcImageParse, parseKktcTokens, aeonPdfParse, snapCatalog, pickBarcode, parseQty, gtinOk, parseNum, parseWords, pdfWords, imageParse, fold };
+  const api = { pdfItems, kktcImageParse, parseKktcTokens, aeonPdfParse, snapCatalog, pickBarcode, parseQty, gtinOk, parseNum, parseWords, pdfWords, imageParse, fold };
   if (typeof module !== 'undefined') module.exports = api; else root.FUJI = api;
 })(typeof window !== 'undefined' ? window : globalThis);

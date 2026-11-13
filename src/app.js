@@ -1,6 +1,9 @@
 (function(){
 const {ACCOUNTS, buildForm, fmtDate, assignPO, toISO, addDays, validateFuji} = window.FFM;
 const TEMPLATE = Uint8Array.from(atob(TEMPLATE_B64), c => c.charCodeAt(0));
+const TEMPLATE5 = typeof TEMPLATE5_B64 !== 'undefined' ? Uint8Array.from(atob(TEMPLATE5_B64), c => c.charCodeAt(0)) : null;
+// account dùng form FORM_5_HP (Miomio) hay FORM_2_HP (còn lại)
+const makeXlsx = r => (ACCOUNTS[r.acctKey] || {}).form5 && TEMPLATE5 ? FFM.buildFormProto(TEMPLATE5, r) : buildForm(window.FFM_TPL || TEMPLATE, r);
 const COMING = [];
 // thư viện tải khi cần (chỉ BRG)
 const LIBS = Object.assign({ pdf: ['https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'], ocr: ['https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js'], tessOpts: { langPath: 'https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_fast@main', gzip: false, cachePath: 'ffm-tessdata-fast' } }, window.FFM_LIBS || {});
@@ -245,7 +248,7 @@ $('addBtn').addEventListener('click', () => {
   $('addBc').value = ''; $('addPc').value = ''; acctNote();
 });
 // Mã KH: team tự thêm (chọn tay ở ô Mã khách hàng là tự lưu; hoặc thêm trong ô "+ Thêm mã khách hàng")
-const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/, ANNHIEN: /^ANHN/ };
+const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/, ANNHIEN: /^ANHN/, MIOMIO: /^MIOMIOW/ };
 function saveCust(acctKey, code, store){
   const list = (window.FFM_CUST_SHARED || []).filter(x => !(x.acct === acctKey && x.name.trim().toLowerCase() === store.trim().toLowerCase()));
   list.push({ acct: acctKey, code, name: store.trim() });
@@ -325,7 +328,7 @@ function card(r, idx){
   btn.disabled = r.demo || st === 'err' || !!r.error;
   btn.addEventListener('click', async () => {
     btn.disabled = true;
-    try { const bytes = await buildForm(window.FFM_TPL || TEMPLATE, r); if (await save(outName(r), new Blob([bytes]))) logEvent({ event:'Tải file', acct:r.acctKey || sel.value, orders:1, ok:1, names:outName(r) }); }
+    try { const bytes = await makeXlsx(r); if (await save(outName(r), new Blob([bytes]))) logEvent({ event:'Tải file', acct:r.acctKey || sel.value, orders:1, ok:1, names:outName(r) }); }
     catch(e) { toast(e.message, 'err'); }
     btn.disabled = false;
   });
@@ -415,7 +418,7 @@ function card(r, idx){
 $('btnAll').addEventListener('click', async () => {
   const ready = state.results.filter(r => status(r) !== 'err');
   const zip = new JSZip();
-  for (const r of ready) zip.file(outName(r), await buildForm(window.FFM_TPL || TEMPLATE, r));
+  for (const r of ready) zip.file(outName(r), await makeXlsx(r));
   const blob = await zip.generateAsync({type:'blob'});
   const d = new Date(), p = n => String(n).padStart(2,'0');
   if (await save(`${sel.value}_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}.zip`, blob)) logEvent({ event:'Tải tất cả (zip)', acct:sel.value, orders:ready.length, ok:ready.length, names:ready.map(outName).join(' | ') });

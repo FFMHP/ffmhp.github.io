@@ -245,6 +245,70 @@
     return { multi: out };
   }
 
+  /* ---------- Miomio: PO dạng PDF (PURCHASE ORDER) ----------
+     Số đơn = "PO No." trên phiếu · ngày đặt = "Order time" · mã KH cố định MIOMIOW0004
+     SL điền form = số cuối cùng trong cột Specification × cột Purchase Quantity
+     (vd "1 thùng 24 hộp * 12 cái" × 30 = 360). Barcode → product code theo DMSP, điền cột D. */
+  function parseMiomio(acct, items, fileName) {
+    const issues = [];
+    const all = items.map(x => x.t).join(' ');
+    const mPo = all.match(/PO\s*No\.?\s*[：:]?\s*(PO\d{6,})/i) || all.match(/\b(PO\d{10,})\b/) || fileName.match(/(PO\d{10,})/i);
+    const po = mPo ? mPo[1].toUpperCase() : '';
+    if (!po) issues.push({ key: 'po', level: 'err', msg: 'Không đọc được PO No. trên phiếu. Nhập tay Số đơn.' });
+    const mD = all.match(/Order\s*time\s*[：:]?\s*(\d{4})-(\d{2})-(\d{2})/i);
+    const orderDate = mD ? `${mD[1]}-${mD[2]}-${mD[3]}` : '';
+    if (!orderDate) issues.push({ level: 'warn', msg: 'Không đọc được Order time; ngày giao tính theo ô Ngày về đơn.' });
+    // cột theo tiêu đề
+    const H = re => items.find(x => re.test(x.t));
+    const hBc = H(/^piece\s*barcode$|^barcode$/i) || H(/barcode/i), hSpec = H(/^specification$/i), hDesc = H(/description/i);
+    const hValid = H(/^valid/i), hPur = H(/^purchase$/i) || H(/purchase/i), hUnit = items.find(x => /^unit$/i.test(x.t) && hPur && x.x0 > hPur.x1);
+    if (!hSpec || !hPur) return { error: 'Không tìm thấy cột Specification / Purchase Quantity trên PO. File này có đúng mẫu PO Miomio không?' };
+    const specL = hDesc ? (hDesc.x1 + hSpec.x0) / 2 : hSpec.x0 - 20;
+    const specR = hValid ? hValid.x0 - 2 : hSpec.x1 + 20;
+    const purL = hValid ? hValid.x1 + 2 : hPur.x0 - 15, purR = hUnit ? hUnit.x0 - 2 : hPur.x1 + 15;
+    const hdrY = hSpec.y1;
+    const bcs = items.filter(x => /^\d{8,14}$/.test(x.t) && x.y0 > hdrY && (!hBc || x.x0 < (hDesc ? hDesc.x0 : hSpec.x0))).sort((a, b) => a.y0 - b.y0);
+    const totalIt = items.find(x => /^total$/i.test(x.t) && x.y0 > hdrY);
+    const lines = [];
+    bcs.forEach((b, i) => {
+      const top = b.y0 - 14, bot = i + 1 < bcs.length ? bcs[i + 1].y0 - 14 : (totalIt ? totalIt.y0 - 2 : b.y0 + 120);
+      const band = items.filter(x => x.y0 >= top && x.y0 < bot);
+      const spec = band.filter(x => x.x0 >= specL && x.x0 < specR).sort((a, c) => (a.y0 - c.y0) || (a.x0 - c.x0));
+      let specTxt = '';
+      spec.forEach(x => { specTxt += specTxt && !(/\d$/.test(specTxt) && /^\d/.test(x.t)) ? ' ' + x.t : x.t; });
+      const desc = band.filter(x => hDesc && x.x0 >= hDesc.x0 - 40 && x.x0 < specL && !/^D\d{6,}$/.test(x.t)).sort((a, c) => (a.y0 - c.y0) || (a.x0 - c.x0)).map(x => x.t).join(' ').replace(/\s+/g, ' ');
+      const pur = band.filter(x => x.x0 >= purL && x.x1 <= purR + 10 && /^\d+([.,]\d+)?$/.test(x.t));
+      const pq = pur.length ? Number(pur[0].t.replace(',', '.')) : NaN;
+      const nums = specTxt.match(/\d+/g) || [];
+      const last = nums.length ? Number(nums[nums.length - 1]) : NaN;
+      const ln = { row: i + 1, barcode: b.t, qty: (last && pq) ? last * pq : NaN, flags: [], spec: specTxt, pq, last };
+      if (!specTxt || Number.isNaN(last)) ln.flags.push({ level: 'err', msg: `Không đọc được số trong cột Specification ("${specTxt}"). Nhập tay SL.` });
+      if (Number.isNaN(pq)) ln.flags.push({ level: 'err', msg: 'Không đọc được Purchase Quantity. Nhập tay SL.' });
+      // barcode -> product code (DMSP); có nhiều mã thì lấy mã trùng barcode, báo vàng
+      const cands = root.FFM_PC ? (root.FFM_PC[b.t.padStart(14, '0')] || []) : [];
+      const same = cands.find(c => c[0] === b.t);
+      if (cands.length === 1) ln.productCode = cands[0][0];
+      else if (same) { ln.productCode = same[0]; ln.flags.push({ level: 'warn', msg: `DMSP có ${cands.length} mã cho barcode này (${cands.map(c => c[0]).join(', ')}); đang lấy ${same[0]}.` }); }
+      else if (cands.length > 1) { ln.productCode = cands[0][0]; ln.flags.push({ level: 'warn', msg: `DMSP có ${cands.length} mã: ${cands.map(c => c[0]).join(', ')}; đang lấy ${cands[0][0]}, kiểm tra lại.` }); }
+      else { ln.productCode = b.t; ln.flags.push({ level: 'warn', msg: 'Barcode không có trong DMSP; điền barcode vào cột D, kiểm tra lại mã.' }); }
+      if (root.FUJI && !root.FUJI.gtinOk(b.t)) ln.flags.push({ level: 'warn', msg: 'Barcode sai số kiểm tra' });
+      ln.flags.push({ level: 'info', msg: `SL = ${Number.isNaN(last) ? '?' : last} (số cuối "${specTxt}") × ${Number.isNaN(pq) ? '?' : pq}` });
+      const dm = cands.length ? cands[0][1] : '';
+      ln.dmName = dm || desc;
+      ln.name = `${ln.productCode} · ${dm || desc}`;
+      lines.push(ln);
+    });
+    if (!lines.length) return { error: 'Không thấy dòng hàng nào (barcode) trên PO.' };
+    // đối chiếu tổng Purchase Quantity với dòng Total
+    if (totalIt) {
+      const tq = items.filter(x => Math.abs(x.y0 - totalIt.y0) < 6 && x.x0 >= purL - 10 && x.x1 <= purR + 15 && /^\d+$/.test(x.t));
+      const sumPq = lines.reduce((s, l) => s + (l.pq || 0), 0);
+      if (tq.length && Number(tq[0].t) !== sumPq) issues.push({ level: 'err', msg: `Tổng Purchase Quantity đọc được (${sumPq}) khác dòng Total trên PO (${tq[0].t}). Có thể thiếu hoặc đọc sai dòng.` });
+      else if (tq.length) issues.push({ level: 'info', msg: `Khớp tổng Purchase Quantity với dòng Total: ${sumPq}.` });
+    }
+    return { fixedPo: true, pcMode: true, editable: true, po, customer: acct.fixedCustomer, store: 'Miomio (Busy Ming)', orderDate, lines, issues, source: 'pdf' };
+  }
+
   /* ---------- Account rules ---------- */
   const ACCOUNTS = {
     KKTC: {
@@ -390,6 +454,20 @@
       // Số đơn: ANNHIEN + YYMMDD (ngày trong tên sheet) + -01, -02… (mỗi sheet 1 đơn)
       parse(wb, fileName) { return parseAnNhien(this, wb, fileName || ''); }
     }
+    ,
+    MIOMIO: {
+      label: 'Miomio (PDF)', fixedPo: true, async: true, pcMode: true, form5: true, // xuất theo form FORM_5_HP như file mẫu
+      accept: '.pdf',
+      leadDays: 4,
+      fixedCustomer: 'MIOMIOW0004', // anh Tài chốt: Miomio cố định mã KH này
+      customers: [{ code: 'MIOMIOW0004', name: 'Miomio' }],
+      async parseFile(f, onProgress, libs) {
+        try { await libs.pdf(); } catch (e) { return { error: 'Không tải được bộ đọc PDF (cần internet).' }; }
+        onProgress && onProgress('Đang đọc PO Miomio…');
+        const items = await root.FUJI.pdfItems(f.buf);
+        return parseMiomio(this, items, f.name);
+      }
+    }
   };
 
   function parseAeonCsv(buf) {
@@ -494,6 +572,39 @@
   /* ---------- Writer: fill Hyperion FORM_2_HP template ---------- */
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+  /* FORM_5_HP (Miomio): giữ nguyên định dạng của form mẫu, chỉ thay giá trị ô.
+     C9 số đơn · C10 mã KH · C13 ngày giao · dòng 20–39: D product code, E tên hàng, F số lượng. */
+  async function buildFormProto(templateBytes, { po, customer, delivery, lines }) {
+    if (lines.length > 20) throw new Error('Form FORM_5_HP chỉ có 20 dòng hàng (20–39); đơn này có ' + lines.length + ' dòng.');
+    const zip = await JSZipLib.loadAsync(templateBytes);
+    const sheetPath = 'xl/worksheets/sheet1.xml', sstPath = 'xl/sharedStrings.xml';
+    let sheet = await zip.file(sheetPath).async('string');
+    let sst = await zip.file(sstPath).async('string');
+    let sis = (sst.match(/<si>/g) || []).length;
+    const addS = text => { sst = sst.replace('</sst>', `<si><t xml:space="preserve">${esc(text)}</t></si></sst>`); return sis++; };
+    // thay giá trị một ô, giữ kiểu định dạng (s="..") của ô trong form mẫu
+    const put = (ref, val, kind) => {
+      const re = new RegExp(`<c r="${ref}"((?: [^>]*?)?)(?:/>|>[\\s\\S]*?</c>)`);
+      const m = sheet.match(re);
+      const st = m ? ((m[1].match(/ s="\d+"/) || [''])[0]) : '';
+      const xml = val == null || val === '' ? `<c r="${ref}"${st}/>`
+        : kind === 'n' ? `<c r="${ref}"${st}><v>${val}</v></c>` : `<c r="${ref}"${st} t="s"><v>${addS(String(val))}</v></c>`;
+      if (m) sheet = sheet.replace(re, xml);
+      else { const rn = ref.replace(/^[A-Z]+/, ''); sheet = sheet.replace(new RegExp(`(<row r="${rn}"[^>]*>[\\s\\S]*?)(</row>)`), `$1${xml}$2`); }
+    };
+    put('C9', po); put('C10', customer); put('C13', excelSerial(delivery), 'n');
+    for (let i = 0; i < 20; i++) {
+      const n = 20 + i, l = lines[i];
+      put(`C${n}`, '');
+      put(`D${n}`, l ? (l.productCode || l.barcode) : '');
+      put(`E${n}`, l ? (l.dmName || '') : '');
+      put(`F${n}`, l ? l.qty : '', 'n');
+    }
+    sst = sst.replace(/count="\d+"/, `count="${sis}"`).replace(/uniqueCount="\d+"/, `uniqueCount="${sis}"`);
+    zip.file(sheetPath, sheet); zip.file(sstPath, sst);
+    return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+  }
+
   async function buildForm(templateBytes, { po, customer, delivery, lines }) {
     const zip = await JSZipLib.loadAsync(templateBytes);
     const sheetPath = 'xl/worksheets/sheet1.xml', sstPath = 'xl/sharedStrings.xml';
@@ -536,6 +647,6 @@
     return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
   }
 
-  const api = { validateAeon, resolveAeon, validateFuji, matchCustomer, ACCOUNTS, buildForm, fmtDate, excelSerial, assignPO, toISO, addDays };
+  const api = { validateAeon, resolveAeon, validateFuji, matchCustomer, ACCOUNTS, buildForm, buildFormProto, fmtDate, excelSerial, assignPO, toISO, addDays };
   if (typeof module !== 'undefined') module.exports = api; else root.FFM = api;
 })(typeof window !== 'undefined' ? window : globalThis);
