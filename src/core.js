@@ -456,7 +456,7 @@
     }
     ,
     MIOMIO: {
-      label: 'Miomio (PDF)', fixedPo: true, async: true, pcMode: true, form5: true, // xuất theo form FORM_5_HP như file mẫu
+      label: 'Miomio (PDF)', fixedPo: true, async: true, pcMode: true, // anh Tài chốt 13/11: dùng form FORM_2_HP như các account khác
       accept: '.pdf',
       leadDays: 4,
       fixedCustomer: 'MIOMIOW0004', // anh Tài chốt: Miomio cố định mã KH này
