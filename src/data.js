@@ -37,12 +37,17 @@
     if (h < 0) throw new Error('DMKH: không thấy cột "Mã KH" và "Tên nội bộ"');
     const ci = rows[h].findIndex(x => norm(x).toLowerCase() === 'mã kh'), ni = rows[h].findIndex(x => norm(x).toLowerCase() === 'tên nội bộ');
     const out = {}; Object.keys(PREFIX).forEach(k => out[k] = []);
+    // ACC (Nhóm Khách hàng chính) + Kênh phân phối cho báo cáo List order: mã KH -> [acc, kênh]
+    const H = rows[h].map(x => norm(x).toLowerCase()), ai = H.indexOf('nhóm khách hàng chính'), ki = H.indexOf('kênh phân phối');
+    const acc = {};
+    if (ai >= 0) for (const r of rows.slice(h + 1)) { const c = norm(r[ci]).toUpperCase(); if (c) acc[c] = [norm(r[ai]), ki >= 0 ? norm(r[ki]) : '']; }
+    out.__acc = acc;
     for (const r of rows.slice(h + 1)) {
       const code = norm(r[ci]), name = norm(r[ni]);
       if (!code || !name) continue;
       for (const k in PREFIX) if (code.toUpperCase().startsWith(PREFIX[k])) out[k].push({ code, name });
     }
-    if (!Object.values(out).some(a => a.length)) throw new Error('DMKH: không có mã KH nào của KKTC/MORGT/BRGMART/AEON/SOIBIEN');
+    if (!Object.keys(out).some(k => k !== '__acc' && out[k].length)) throw new Error('DMKH: không có mã KH nào của KKTC/MORGT/BRGMART/AEON/SOIBIEN');
     return out;
   }
   // DMSP: Barcode -> [[product code, tên, active]]; bỏ vật tư POSM có mã chữ, bỏ barcode lạ (>14 số)
@@ -72,7 +77,7 @@
   }
 
   function apply(key, val) {
-    if (key === 'dmkh') { for (const k in val) { const a = root.FFM.ACCOUNTS[k]; if (a && val[k].length) a.customers.splice(0, a.customers.length, ...val[k]); } applyCust(); }
+    if (key === 'dmkh') { root.FFM_ACCMAP = val.__acc || null; for (const k in val) { if (k === '__acc') continue; const a = root.FFM.ACCOUNTS[k]; if (a && val[k].length) a.customers.splice(0, a.customers.length, ...val[k]); } applyCust(); }
     if (key === 'dmsp') {
       const extra = root.FFM_PC_EXTRA || {};
       for (const k in extra) if (!val[k]) val[k] = extra[k];
@@ -88,10 +93,11 @@
     const name = FILES[key];
     const st = await stamp(name);
     if (!st) { status[key] = { src: 'gắn sẵn' }; return; }
-    const c = lget(key + '@2');
+    try { localStorage.removeItem(CACHE + key + '@2'); } catch (e) {}
+    const c = lget(key + '@3');
     if (c && c.tag === st.tag) { apply(key, c.val); status[key] = { src: 'web', at: c.mod }; return; }
     const val = PARSE[key](await getBook(name));
-    lset(key + '@2', { tag: st.tag, mod: st.mod, val });
+    lset(key + '@3', { tag: st.tag, mod: st.mod, val });
     apply(key, val); status[key] = { src: 'web', at: st.mod, fresh: true };
   }
 

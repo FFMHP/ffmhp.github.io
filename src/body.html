@@ -128,10 +128,25 @@
       <p class="sub">Các tính năng cho những nhóm khác trong FFM.</p>
     </div>
   </header>
-  <section class="panel soon">
-    <span class="team-ic" aria-hidden="true">🚧</span>
-    <b>Các tính năng đang được xây dựng</b>
-    <p class="note">Khi có công cụ mới, chúng sẽ xuất hiện ở đây. Cần gì cứ nhắn vào khung chat của team.</p>
+  <section class="panel rp" aria-labelledby="rpTitle">
+    <h2 id="rpTitle">📊 Báo cáo List order hằng ngày</h2>
+    <p class="note">Kéo thả file "Danh sách đơn đặt hàng (xuất bán)" xuất từ phần mềm, web tự làm file <b>Total PO update</b> (Total theo miền, National, Đơn hủy). File chỉ xử lý trên máy bạn, không gửi lên đâu.</p>
+    <div class="drop" id="rpDrop" tabindex="0" role="button" aria-label="Chọn hoặc kéo thả file data">
+      <span class="team-ic" aria-hidden="true">📄</span>
+      <div><b id="rpName">Kéo thả file data vào đây</b><small>hoặc bấm để chọn file .xlsx</small></div>
+    </div>
+    <input type="file" id="rpFile" accept=".xlsx,.xls" hidden>
+    <details class="rp-more">
+      <summary>Số nhập tay (nếu có)</summary>
+      <label>Trị giá đơn tháng trước đã xuất HĐ sang tháng này <input id="rpPrev" inputmode="numeric" placeholder="0"></label>
+      <label>Trị giá đơn hủy đã xuất HĐ thay thế trong tháng <input id="rpRepl" inputmode="numeric" placeholder="0"></label>
+    </details>
+    <div class="rp-act">
+      <button type="button" class="primary" id="rpGo" disabled>Chạy báo cáo</button>
+      <button type="button" class="primary" id="rpDl" hidden>⬇ Tải file kết quả</button>
+      <span class="note" id="rpMsg" role="status" aria-live="polite"></span>
+    </div>
+    <div id="rpOut" hidden></div>
   </section>
 </div>
 
@@ -208,7 +223,7 @@
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v47</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v48</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
