@@ -512,7 +512,7 @@ button.danger{color:var(--err);border-color:var(--err)}
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v49</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v50</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
@@ -3254,25 +3254,26 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
     });
     const val = evalFormulas(ws, known);
     ws.eachRow({ includeEmpty: false }, row => row.eachCell({ includeEmpty: false }, cell => {
-      if (cell.formula) cell.value = { formula: cell.formula, result: val(cell.address) };
+      // National không còn 10 dòng trống ở đầu: dữ liệu bắt đầu dòng 3 thay vì 13
+      if (cell.formula) cell.value = { formula: cell.formula.replace(/(National!\$[A-Z]+\$)13:/g, (_, p) => p + '3:'), result: val(cell.address) };
     }));
     ws.getCell('H3').value = R.extra.prev || null;
     ws.getCell('H4').value = null;
     ws.getCell('G2').value = `Trị giá đơn hàng tháng ${R.mm} đã xuất hóa đơn`;
     ws.getCell('G3').value = `Trị giá đơn hàng tháng ${R.prev} đã xuất hóa đơn sang tháng ${R.mm}`;
     ws.getCell('G4').value = `Trị giá đơn hàng hủy - Đã xuất hóa đơn thay thế trong tháng ${R.mm}`;
-    // National + ĐƠN HỦY: cùng bố cục file gốc (dữ liệu từ dòng 13; cột C khu vực, D đã giao, E đã xuất HĐ, F hủy, O trị giá, AA amount, AJ tình trạng)
+    // National + ĐƠN HỦY: tiêu đề dòng 1-2, dữ liệu từ dòng 3 (cột giữ như file gốc: cột C khu vực, D đã giao, E đã xuất HĐ, F hủy, O trị giá, AA amount, AJ tình trạng)
     const keep = D.head.map((h, i) => i).filter(i => i !== D.C.ddh);
     const head1 = ['ACC', 'Kênh phân phối', 'Khu Vực', 'Đã giao', 'Đã xuất HĐ', 'PO HỦY'].concat(keep.map(i => D.H1[i] || ''));
     const head2 = ['', '', '', '', '', ''].concat(keep.map(i => D.H2[i] || ''));
     const sheet = (name, list) => {
-      const s = wb.addWorksheet(name, { views: [{ state: 'frozen', ySplit: 12, xSplit: 0 }] });
-      s.getRow(11).values = head1; s.getRow(12).values = head2;
-      [11, 12].forEach(r => { const row = s.getRow(r); row.height = 42; row.eachCell(c => { c.font = { bold: true, size: 10 }; c.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } }; c.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }; }); });
-      list.forEach((o, i) => { s.getRow(13 + i).values = [o.acc, o.kenh, o.kv || '#N/A', o.daGiao, o.daHD, o.isHuy].concat(keep.map(k => o.raw[k] === undefined || o.raw[k] === null ? '' : o.raw[k])); });
+      const s = wb.addWorksheet(name, { views: [{ state: 'frozen', ySplit: 2, xSplit: 0 }] });
+      s.getRow(1).values = head1; s.getRow(2).values = head2;
+      [1, 2].forEach(r => { const row = s.getRow(r); row.height = 42; row.eachCell(c => { c.font = { bold: true, size: 10 }; c.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } }; c.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }; }); });
+      list.forEach((o, i) => { s.getRow(3 + i).values = [o.acc, o.kenh, o.kv || '#N/A', o.daGiao, o.daHD, o.isHuy].concat(keep.map(k => o.raw[k] === undefined || o.raw[k] === null ? '' : o.raw[k])); });
       s.columns.forEach((c, i) => { c.width = i < 6 ? 11 : 16; });
       [15, 27].forEach(c => { s.getColumn(c).numFmt = '#,##0'; });
-      s.autoFilter = { from: { row: 12, column: 1 }, to: { row: 12 + list.length, column: head1.length } };
+      s.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2 + list.length, column: head1.length } };
       return s;
     };
     sheet('National', R.nat);
