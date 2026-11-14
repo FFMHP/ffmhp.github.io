@@ -19,7 +19,17 @@
   };
   const REGIONS = ['Miền Nam', 'Miền Bắc', 'Miền Trung'];
   const fold = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().replace(/\s+/g, ' ').trim();
-  const kvOf = k => { const n = String(k || '').trim(); if (KV[n]) return KV[n]; const f = fold(n); for (const key in KV) if (fold(key) === f) return KV[key]; return ''; };
+  // khai báo của team (sheet "Khai báo báo cáo"): acc {MÃ: [ACC, Kênh]}, kho {tên kho: Miền}
+  let SHARED = { acc: {}, kho: {} };
+  try { SHARED = Object.assign(SHARED, JSON.parse(localStorage.getItem('ffm-rpmap') || '{}')); } catch (e) {}
+  async function loadShared() {
+    const API = window.FFM_API; if (!/^https:/.test(API || '')) return;
+    try {
+      const j = await Promise.race([fetch(API + '?t=rpmap', { cache: 'no-store' }).then(r => r.json()), new Promise((_, no) => setTimeout(() => no(new Error('timeout')), 8000))]);
+      if (j && j.acc) { SHARED = { acc: j.acc || {}, kho: j.kho || {} }; try { localStorage.setItem('ffm-rpmap', JSON.stringify(SHARED)); } catch (e) {} }
+    } catch (e) {}
+  }
+  const kvOf = k => { const n = String(k || '').trim(); if (KV[n]) return KV[n]; if (SHARED.kho[n]) return SHARED.kho[n]; const f = fold(n); for (const key in KV) if (fold(key) === f) return KV[key]; return ''; };
   const num = v => typeof v === 'number' ? v : (Number(String(v || '').replace(/[^\d.-]/g, '')) || 0);
   const fmtTr = v => { const tr = v / 1e6; return tr >= 1000 ? (Math.round(tr / 100) / 10).toString().replace('.', ',') + 'tỷ' : Math.round(tr) + 'tr'; };
   const vnd = v => Math.round(v).toLocaleString('vi-VN');
@@ -47,7 +57,7 @@
     const head = []; for (let c = 0; c < width; c++) head.push(String(H2[c] || H1[c] || '').replace(/\r/g, '').trim());
     const col = re => head.findIndex(x => re.test(fold(x)));
     const C = {
-      so: col(/^ma phieu xuat/), ddh: col(/^ngay ve don theo ddh/), code: col(/^ma khach hang/), val: col(/^tri gia don hang/), dvvc: col(/^ngay ban giao don hang cho dvvc/),
+      so: col(/^ma phieu xuat/), cname: col(/^ten khach hang/), ddh: col(/^ngay ve don theo ddh/), code: col(/^ma khach hang/), val: col(/^tri gia don hang/), dvvc: col(/^ngay ban giao don hang cho dvvc/),
       inv: col(/^so hoa don/), amt: col(/^amount/), st: col(/^tinh trang don hang$/), sl: col(/smartlog/), kho: col(/^kho xuat/), stt: col(/^so tt/), de: col(/^ma phieu de xuat \(code\)/)
     };
     const miss = Object.entries(C).filter(([k, v]) => v < 0 && !['stt', 'de', 'ddh'].includes(k)).map(([k]) => k);
@@ -59,11 +69,12 @@
 
   function build(D, extra) {
     const A = window.FFM_ACCMAP || {};
-    const accOf = code => { const c = String(code || '').trim().toUpperCase(); return A[c.replace(/HP$/, '')] || A[c] || null; };
-    const C = D.C, nat = [], huy = [], noAcc = new Set(), noKv = {};
+    const S = SHARED.acc || {};
+    const accOf = code => { const c = String(code || '').trim().toUpperCase(), b = c.replace(/HP$/, ''); return A[b] || A[c] || S[b] || S[c] || null; };
+    const C = D.C, nat = [], huy = [], noAcc = new Map(), noKv = {};
     D.data.forEach(r => {
       const acc = accOf(r[C.code]), kv = kvOf(r[C.kho]);
-      if (!acc) noAcc.add(String(r[C.code]).trim());
+      if (!acc) { const k = String(r[C.code]).trim().toUpperCase().replace(/HP$/, ''); const x = noAcc.get(k) || { name: C.cname >= 0 ? String(r[C.cname] || '').trim() : '', n: 0, v: 0 }; x.n++; x.v += num(r[C.val]); noAcc.set(k, x); }
       const daGiao = String(r[C.dvvc]).trim() && fold(r[C.sl]) !== 'giao hang that bai' ? 1 : 0;
       const daHD = String(r[C.inv]).trim() ? 1 : 0, isHuy = fold(r[C.st]) === 'po huy' ? 1 : 0;
       const o = { acc: acc ? acc[0] : '', kenh: acc ? acc[1] : '', kv, daGiao, daHD, isHuy, val: num(r[C.val]), amt: num(r[C.amt]), raw: r };
@@ -95,7 +106,7 @@
     const T = { nw: table(''), reg: REGIONS.map(r => ({ r, t: table(r) })) };
     const m = (D.to || '').split('/'), mm = m.length === 3 ? `${m[1]}/${m[2]}` : '', prev = m.length === 3 ? (+m[1] === 1 ? `12/${+m[2] - 1}` : `${String(+m[1] - 1).padStart(2, '0')}/${m[2]}`) : '';
     const hdThang = T.nw.tot.a;
-    return { nat, huy, T, noAcc: [...noAcc], noKv, mm, prev, hdThang, extra, D };
+    return { nat, huy, T, noAcc: [...noAcc.entries()], noKv, mm, prev, hdThang, extra, D };
   }
 
   // ---- ghi file Excel: sheet Total lấy nguyên mẫu (định dạng + công thức) từ file Total PO update của anh Tài ----
@@ -192,11 +203,41 @@
       });
       const sc = el('div', 'tbl-scroll'); sc.append(tb); wrap.append(sc); box.append(wrap);
     });
-    const warn = [];
-    const nk = Object.entries(R.noKv);
-    if (nk.length) warn.push(`Không tính vào bảng theo miền (kho chưa có trong bảng Quy đổi): ${nk.map(([k, x]) => `${k} (${x.n} đơn, ${fmtTr(x.v)})`).join('; ')}.`);
-    if (R.noAcc.length) warn.push(`${R.noAcc.length} mã khách hàng không có trong DMKH nên để trống ACC: ${R.noAcc.slice(0, 8).join(', ')}${R.noAcc.length > 8 ? '…' : ''}.`);
-    if (warn.length) { const w = el('div', 'rp-warn'); warn.forEach(x => w.append(el('p', '', '⚠ ' + x))); box.append(w); }
+    // mã KH thiếu ACC / kho thiếu miền: cho team khai báo + Ghi nhớ (dùng chung cả team)
+    if (R.noAcc.length || Object.keys(R.noKv).length) {
+      const w = el('div', 'rp-warn');
+      const accList = [...new Set(Object.values(window.FFM_ACCMAP || {}).map(x => x[0]).concat(Object.values(SHARED.acc).map(x => x[0])).filter(Boolean))].sort();
+      let dl = $('rpAccList'); if (!dl) { dl = el('datalist'); dl.id = 'rpAccList'; document.body.append(dl); }
+      dl.innerHTML = ''; accList.forEach(a => { const o = el('option'); o.value = a; dl.append(o); });
+      const KENH = ['MT', 'GT', 'B2B', 'HORECA', 'OTHERS'];
+      if (Object.keys(R.noKv).length) {
+        w.append(el('p', 'rp-w-h', '⚠ Kho chưa có miền (chưa tính vào bảng theo miền). Chọn miền rồi bấm Ghi nhớ:'));
+        Object.entries(R.noKv).forEach(([k, x]) => {
+          const row = el('div', 'rp-fix');
+          const sel = el('select'); sel.setAttribute('aria-label', 'Miền của ' + k);
+          ['', 'Miền Nam', 'Miền Bắc', 'Miền Trung'].forEach(m => { const o = el('option', '', m || '— chọn miền —'); o.value = m; sel.append(o); });
+          const b = el('button', 'small primary', 'Ghi nhớ'); b.type = 'button';
+          b.onclick = () => remember('kho', k, sel.value, '', b);
+          row.append(el('span', 'rp-k', `${k} (${x.n} đơn, ${fmtTr(x.v)})`), sel, b); w.append(row);
+        });
+      }
+      if (R.noAcc.length) {
+        w.append(el('p', 'rp-w-h', `⚠ ${R.noAcc.length} mã khách hàng chưa có trong DMKH (cột ACC đang trống). Nhập ACC + kênh rồi bấm Ghi nhớ:`));
+        R.noAcc.forEach(([k, x]) => {
+          const row = el('div', 'rp-fix');
+          const inp = el('input'); inp.setAttribute('list', 'rpAccList'); inp.placeholder = 'ACC, vd COOP'; inp.setAttribute('aria-label', 'ACC của ' + k);
+          const guess = accList.find(a => k.startsWith(a.replace(/[^A-Z0-9]/gi, '').toUpperCase())) || ''; inp.value = guess;
+          const sel = el('select'); sel.setAttribute('aria-label', 'Kênh của ' + k);
+          KENH.forEach(m => { const o = el('option', '', m); o.value = m; sel.append(o); });
+          if (guess) { const any = Object.values(window.FFM_ACCMAP || {}).find(v => v[0] === guess); if (any && KENH.includes(any[1])) sel.value = any[1]; }
+          const b = el('button', 'small primary', 'Ghi nhớ'); b.type = 'button';
+          b.onclick = () => remember('acc', k, inp.value.trim().toUpperCase(), sel.value, b);
+          row.append(el('span', 'rp-k', `${k}${x.name ? ' – ' + x.name : ''} (${x.n} đơn, ${fmtTr(x.v)})`), inp, sel, b); w.append(row);
+        });
+      }
+      w.append(el('p', 'note', 'Ghi nhớ xong, báo cáo tự chạy lại. Lần sau cả team không phải khai báo lại.'));
+      box.append(w);
+    }
   }
 
   $('rpPrev').addEventListener('blur', e => { const n = Number(e.target.value.replace(/\D/g, '')); e.target.value = n ? n.toLocaleString('vi-VN') : ''; });
@@ -205,14 +246,34 @@
     const API = window.FFM_API; if (!/^https:/.test(API || '')) return;
     try { fetch(API, { method: 'POST', mode: 'no-cors', keepalive: true, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ team: 'khac', user: ($('who').value || '').trim(), acct: 'LIST ORDER', files: 1, ver: ($('ver').textContent || '').replace('Phiên bản ', '') }, d)) }).catch(() => {}); } catch (e) {}
   }
+  let lastD = null;
+  async function rerun() {
+    if (!lastD) return;
+    const R = build(lastD, { prev: Number(String($('rpPrev').value).replace(/\D/g, '')) || 0 });
+    out = await toXlsx(R); show(R);
+    $('rpDl').hidden = false; $('rpDl').textContent = '⬇ Tải ' + out.name;
+    return R;
+  }
+  async function remember(type, key, v1, v2, btn) {
+    if (!($('who').value || '').trim()) { $('rpMsg').textContent = 'Nhập tên của bạn (góc trên bên phải) trước khi ghi nhớ.'; window.FFM_askName && window.FFM_askName(); return; }
+    if (!v1) { $('rpMsg').textContent = type === 'kho' ? 'Chọn miền trước khi bấm Ghi nhớ.' : 'Nhập ACC trước khi bấm Ghi nhớ.'; return; }
+    btn.disabled = true; btn.textContent = 'Đang lưu…';
+    if (type === 'kho') SHARED.kho[key] = v1; else SHARED.acc[key.toUpperCase()] = [v1, v2];
+    try { localStorage.setItem('ffm-rpmap', JSON.stringify(SHARED)); } catch (e) {}
+    const API = window.FFM_API;
+    if (/^https:/.test(API || '')) { try { await fetch(API, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ event: 'rpmap', type, key, v1, v2, user: ($('who').value || '').trim() }) }); } catch (e) { $('rpMsg').textContent = 'Chưa lưu lên bảng chung được (mất mạng?). Máy này vẫn nhớ, thử lại sau.'; } }
+    logRp({ event: type === 'kho' ? 'Khai báo miền cho kho' : 'Khai báo ACC cho mã KH', names: `${key} → ${v1}${v2 ? ' / ' + v2 : ''}` });
+    await rerun();
+    $('rpMsg').textContent = `Đã ghi nhớ ${key} → ${v1}${v2 ? ' / ' + v2 : ''}. Báo cáo đã chạy lại.`;
+  }
   $('rpGo').onclick = async () => {
     if (!file) return;
     if (!($('who').value || '').trim()) { $('rpMsg').textContent = 'Nhập tên của bạn (góc trên bên phải) trước khi chạy báo cáo.'; window.FFM_askName && window.FFM_askName(); return; }
     const btn = $('rpGo'); btn.disabled = true; $('rpMsg').textContent = 'Đang đọc file…';
     try {
-      await (window.FFM_DATA && window.FFM_DATA.ready);
+      await Promise.all([window.FFM_DATA && window.FFM_DATA.ready, loadShared()]);
       if (!window.FFM_ACCMAP) $('rpMsg').textContent = 'Chưa tải được DMKH, cột ACC sẽ trống…';
-      const D = readData(new Uint8Array(await file.arrayBuffer()));
+      const D = readData(new Uint8Array(await file.arrayBuffer())); lastD = D;
       const R = build(D, { prev: Number(String($('rpPrev').value).replace(/\D/g, '')) || 0 });
       $('rpMsg').textContent = 'Đang tạo file Excel…';
       out = await toXlsx(R);
