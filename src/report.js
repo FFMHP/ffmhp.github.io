@@ -200,8 +200,14 @@
   }
 
   $('rpPrev').addEventListener('blur', e => { const n = Number(e.target.value.replace(/\D/g, '')); e.target.value = n ? n.toLocaleString('vi-VN') : ''; });
+  // lịch sử: ghi vào sheet Log (cột Nhóm = khac) giống Team đơn hàng
+  function logRp(d) {
+    const API = window.FFM_API; if (!/^https:/.test(API || '')) return;
+    try { fetch(API, { method: 'POST', mode: 'no-cors', keepalive: true, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ team: 'khac', user: ($('who').value || '').trim(), acct: 'LIST ORDER', files: 1, ver: ($('ver').textContent || '').replace('Phiên bản ', '') }, d)) }).catch(() => {}); } catch (e) {}
+  }
   $('rpGo').onclick = async () => {
     if (!file) return;
+    if (!($('who').value || '').trim()) { $('rpMsg').textContent = 'Nhập tên của bạn (góc trên bên phải) trước khi chạy báo cáo.'; window.FFM_askName && window.FFM_askName(); return; }
     const btn = $('rpGo'); btn.disabled = true; $('rpMsg').textContent = 'Đang đọc file…';
     try {
       await (window.FFM_DATA && window.FFM_DATA.ready);
@@ -213,9 +219,9 @@
       show(R);
       $('rpMsg').textContent = `Đọc ${D.data.length.toLocaleString('vi-VN')} đơn${D.from ? ` (từ ${D.from} đến ${D.to})` : ''}. Bấm "Tải file kết quả".`;
       $('rpDl').hidden = false; $('rpDl').textContent = '⬇ Tải ' + out.name;
-      try { const API = window.FFM_API; if (/^https:/.test(API || '')) fetch(API, { method: 'POST', mode: 'no-cors', keepalive: true, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ event: 'Báo cáo List order', team: 'khac', user: ($('who').value || '').trim(), acct: 'LISTORDER', files: 1, orders: D.data.length, ver: ($('ver').textContent || '').replace('Phiên bản ', '') }) }).catch(() => {}); } catch (e) {}
-    } catch (e) { $('rpMsg').textContent = '❌ ' + (e.message || e); $('rpOut').hidden = true; $('rpDl').hidden = true; }
+      logRp({ event: 'Báo cáo List order', orders: D.data.length, ok: 1, names: `${file.name} | ${D.from || '?'}–${D.to || '?'} | ${R.T.nw.tot.n} đơn, HĐ ${fmtTr(R.hdThang)}${R.extra.prev ? ', HĐ tháng trước ' + fmtTr(R.extra.prev) : ''}` });
+    } catch (e) { $('rpMsg').textContent = '❌ ' + (e.message || e); $('rpOut').hidden = true; $('rpDl').hidden = true; logRp({ event: 'Báo cáo List order', ok: 0, err: 1, names: `${file.name} | lỗi: ${String(e.message || e).slice(0, 150)}` }); }
     finally { btn.disabled = false; }
   };
-  $('rpDl').onclick = () => { if (!out) return; const a = document.createElement('a'); a.href = URL.createObjectURL(out.blob); a.download = out.name; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); };
+  $('rpDl').onclick = () => { if (!out) return; logRp({ event: 'Tải báo cáo List order', names: out.name }); const a = document.createElement('a'); a.href = URL.createObjectURL(out.blob); a.download = out.name; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); };
 })();

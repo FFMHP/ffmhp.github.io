@@ -126,7 +126,7 @@ select.cell{font-family:var(--f-body);min-width:16ch}
 
 /* ---- v34: thanh đầu trang, menu, tên người dùng ---- */
 html,body{margin:0;overflow-x:hidden}
-.topbar{background:var(--surface);border-bottom:1px solid var(--line)}
+.topbar{background:var(--surface);border-bottom:1px solid var(--line);position:relative;z-index:50}
 .topbar-in{max-width:1040px;margin:0 auto;padding:10px max(16px,env(safe-area-inset-left,0px));display:flex;align-items:center;gap:18px;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:10px;color:var(--fg);text-decoration:none;font-size:.95rem;white-space:nowrap}
 .brand b{font-weight:700}
@@ -197,7 +197,7 @@ label.step.done i{background:var(--ok);border-color:var(--ok);color:#fff}
 /* ---- v35: nền động — đơn hàng → kho → xe giao ---- */
 .scene{position:fixed;left:0;right:0;bottom:0;height:150px;z-index:0;pointer-events:none;color:var(--accent);opacity:.2}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .scene{opacity:.28}}
-.topbar,.wrap,.foot{position:relative;z-index:1}
+.wrap,.foot{position:relative;z-index:1}.topbar{position:relative;z-index:5}
 .scene svg{width:100%;height:100%;display:block}
 .scene g,.scene line,.scene path,.scene rect,.scene circle{fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .scene .road{stroke-width:2.5}.scene .lane{stroke-dasharray:18 14;stroke-width:1.6;animation:lane 1.2s linear infinite}

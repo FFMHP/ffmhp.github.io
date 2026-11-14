@@ -126,7 +126,7 @@ select.cell{font-family:var(--f-body);min-width:16ch}
 
 /* ---- v34: thanh đầu trang, menu, tên người dùng ---- */
 html,body{margin:0;overflow-x:hidden}
-.topbar{background:var(--surface);border-bottom:1px solid var(--line)}
+.topbar{background:var(--surface);border-bottom:1px solid var(--line);position:relative;z-index:50}
 .topbar-in{max-width:1040px;margin:0 auto;padding:10px max(16px,env(safe-area-inset-left,0px));display:flex;align-items:center;gap:18px;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:10px;color:var(--fg);text-decoration:none;font-size:.95rem;white-space:nowrap}
 .brand b{font-weight:700}
@@ -197,7 +197,7 @@ label.step.done i{background:var(--ok);border-color:var(--ok);color:#fff}
 /* ---- v35: nền động — đơn hàng → kho → xe giao ---- */
 .scene{position:fixed;left:0;right:0;bottom:0;height:150px;z-index:0;pointer-events:none;color:var(--accent);opacity:.2}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .scene{opacity:.28}}
-.topbar,.wrap,.foot{position:relative;z-index:1}
+.wrap,.foot{position:relative;z-index:1}.topbar{position:relative;z-index:5}
 .scene svg{width:100%;height:100%;display:block}
 .scene g,.scene line,.scene path,.scene rect,.scene circle{fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .scene .road{stroke-width:2.5}.scene .lane{stroke-dasharray:18 14;stroke-width:1.6;animation:lane 1.2s linear infinite}
@@ -512,7 +512,7 @@ button.danger{color:var(--err);border-color:var(--err)}
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v50</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v51</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
@@ -3318,8 +3318,14 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
   }
 
   $('rpPrev').addEventListener('blur', e => { const n = Number(e.target.value.replace(/\D/g, '')); e.target.value = n ? n.toLocaleString('vi-VN') : ''; });
+  // lịch sử: ghi vào sheet Log (cột Nhóm = khac) giống Team đơn hàng
+  function logRp(d) {
+    const API = window.FFM_API; if (!/^https:/.test(API || '')) return;
+    try { fetch(API, { method: 'POST', mode: 'no-cors', keepalive: true, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ team: 'khac', user: ($('who').value || '').trim(), acct: 'LIST ORDER', files: 1, ver: ($('ver').textContent || '').replace('Phiên bản ', '') }, d)) }).catch(() => {}); } catch (e) {}
+  }
   $('rpGo').onclick = async () => {
     if (!file) return;
+    if (!($('who').value || '').trim()) { $('rpMsg').textContent = 'Nhập tên của bạn (góc trên bên phải) trước khi chạy báo cáo.'; window.FFM_askName && window.FFM_askName(); return; }
     const btn = $('rpGo'); btn.disabled = true; $('rpMsg').textContent = 'Đang đọc file…';
     try {
       await (window.FFM_DATA && window.FFM_DATA.ready);
@@ -3331,11 +3337,11 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
       show(R);
       $('rpMsg').textContent = `Đọc ${D.data.length.toLocaleString('vi-VN')} đơn${D.from ? ` (từ ${D.from} đến ${D.to})` : ''}. Bấm "Tải file kết quả".`;
       $('rpDl').hidden = false; $('rpDl').textContent = '⬇ Tải ' + out.name;
-      try { const API = window.FFM_API; if (/^https:/.test(API || '')) fetch(API, { method: 'POST', mode: 'no-cors', keepalive: true, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ event: 'Báo cáo List order', team: 'khac', user: ($('who').value || '').trim(), acct: 'LISTORDER', files: 1, orders: D.data.length, ver: ($('ver').textContent || '').replace('Phiên bản ', '') }) }).catch(() => {}); } catch (e) {}
-    } catch (e) { $('rpMsg').textContent = '❌ ' + (e.message || e); $('rpOut').hidden = true; $('rpDl').hidden = true; }
+      logRp({ event: 'Báo cáo List order', orders: D.data.length, ok: 1, names: `${file.name} | ${D.from || '?'}–${D.to || '?'} | ${R.T.nw.tot.n} đơn, HĐ ${fmtTr(R.hdThang)}${R.extra.prev ? ', HĐ tháng trước ' + fmtTr(R.extra.prev) : ''}` });
+    } catch (e) { $('rpMsg').textContent = '❌ ' + (e.message || e); $('rpOut').hidden = true; $('rpDl').hidden = true; logRp({ event: 'Báo cáo List order', ok: 0, err: 1, names: `${file.name} | lỗi: ${String(e.message || e).slice(0, 150)}` }); }
     finally { btn.disabled = false; }
   };
-  $('rpDl').onclick = () => { if (!out) return; const a = document.createElement('a'); a.href = URL.createObjectURL(out.blob); a.download = out.name; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); };
+  $('rpDl').onclick = () => { if (!out) return; logRp({ event: 'Tải báo cáo List order', names: out.name }); const a = document.createElement('a'); a.href = URL.createObjectURL(out.blob); a.download = out.name; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); };
 })();
 </script><script>
 /* Trang chủ (2 nhóm) + chat theo phòng.
