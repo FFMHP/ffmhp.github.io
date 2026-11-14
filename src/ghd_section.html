@@ -1,0 +1,25 @@
+  <section class="panel rp gh" aria-labelledby="ghTitle">
+    <p class="gh-beta">🧪 Bản thử, chưa có trên bản chính thức</p>
+    <h2 id="ghTitle">📦 Mã giao thiếu theo ACC</h2>
+    <p class="note">Kéo thả file <b>rawdata_giao_hang_du_….xlsx</b> (raw báo cáo giao hàng đủ). Web liệt kê các mã giao thiếu theo ACC, theo mã và lý do. Nếu đã nạp file này thì file báo cáo List order tải về có thêm sheet <b>Giao thiếu theo ACC</b>.</p>
+    <div class="drop" id="ghDrop" tabindex="0" role="button" aria-label="Chọn hoặc kéo thả file raw giao hàng đủ">
+      <span class="team-ic" aria-hidden="true">📄</span>
+      <div><b id="ghName">Kéo thả file raw giao hàng đủ vào đây</b><small>hoặc bấm để chọn file .xlsx</small></div>
+    </div>
+    <input type="file" id="ghFile" accept=".xlsx,.xls" hidden>
+    <div class="rp-act">
+      <button type="button" class="primary" id="ghGo" disabled>Xem mã giao thiếu</button>
+      <button type="button" class="primary" id="ghDl" hidden>⬇ Tải file giao thiếu</button>
+      <span class="note" id="ghMsg" role="status" aria-live="polite"></span>
+    </div>
+    <div id="ghOut" hidden>
+      <div class="rp-kpi" id="ghKpi"></div>
+      <div class="gh-filters">
+        <label>ACC <select id="ghAcc"></select></label>
+        <label>Miền <select id="ghReg"></select></label>
+        <label>Lý do <select id="ghWhy"></select></label>
+        <label class="gh-q">Tìm mã / tên <input id="ghQ" type="search" placeholder="barcode hoặc tên sản phẩm"></label>
+      </div>
+      <div id="ghList"></div>
+    </div>
+  </section>
