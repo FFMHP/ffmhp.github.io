@@ -151,7 +151,7 @@
       if (cell.formula) cell.value = { formula: cell.formula.replace(/(National!\$[A-Z]+\$)13:/g, (_, p) => p + '3:'), result: val(cell.address) };
     }));
     ws.getCell('H3').value = R.extra.prev || null;
-    ws.getCell('H4').value = null;
+    ws.getCell('H4').value = R.extra.repl || null;
     ws.getCell('G2').value = `Trị giá đơn hàng tháng ${R.mm} đã xuất hóa đơn`;
     ws.getCell('G3').value = `Trị giá đơn hàng tháng ${R.prev} đã xuất hóa đơn sang tháng ${R.mm}`;
     ws.getCell('G4').value = `Trị giá đơn hàng hủy - Đã xuất hóa đơn thay thế trong tháng ${R.mm}`;
@@ -203,6 +203,7 @@
       });
       const sc = el('div', 'tbl-scroll'); sc.append(tb); wrap.append(sc); box.append(wrap);
     });
+    if (!R.huy.length) { const w0 = el('div', 'rp-warn'); w0.append(el('p', 'rp-w-h', '⚠ File data này không có đơn "PO hủy" nào, nên sheet ĐƠN HỦY sẽ trống. Kiểm tra lại lúc xuất file từ phần mềm có lọc bỏ đơn hủy không.')); box.append(w0); }
     // mã KH thiếu ACC / kho thiếu miền: cho team khai báo + Ghi nhớ (dùng chung cả team)
     // kho chưa có miền: không hiện (anh Tài 14/11), vẫn không tính vào bảng theo miền như file gốc
     if (R.noAcc.length) {
@@ -230,6 +231,8 @@
     }
   }
 
+  const readExtra = () => ({ prev: Number(String($('rpPrev').value).replace(/\D/g, '')) || 0, repl: Number(String($('rpRepl').value).replace(/\D/g, '')) || 0 });
+  $('rpRepl').addEventListener('blur', e => { const n = Number(e.target.value.replace(/\D/g, '')); e.target.value = n ? n.toLocaleString('vi-VN') : ''; });
   $('rpPrev').addEventListener('blur', e => { const n = Number(e.target.value.replace(/\D/g, '')); e.target.value = n ? n.toLocaleString('vi-VN') : ''; });
   // lịch sử: ghi vào sheet Log (cột Nhóm = khac) giống Team đơn hàng
   function logRp(d) {
@@ -239,7 +242,7 @@
   let lastD = null;
   async function rerun() {
     if (!lastD) return;
-    const R = build(lastD, { prev: Number(String($('rpPrev').value).replace(/\D/g, '')) || 0 });
+    const R = build(lastD, readExtra());
     out = await toXlsx(R); show(R);
     $('rpDl').hidden = false; $('rpDl').textContent = '⬇ Tải ' + out.name;
     return R;
@@ -264,13 +267,13 @@
       await Promise.all([window.FFM_DATA && window.FFM_DATA.ready, loadShared()]);
       if (!window.FFM_ACCMAP) $('rpMsg').textContent = 'Chưa tải được DMKH, cột ACC sẽ trống…';
       const D = readData(new Uint8Array(await file.arrayBuffer())); lastD = D;
-      const R = build(D, { prev: Number(String($('rpPrev').value).replace(/\D/g, '')) || 0 });
+      const R = build(D, readExtra());
       $('rpMsg').textContent = 'Đang tạo file Excel…';
       out = await toXlsx(R);
       show(R);
       $('rpMsg').textContent = `Đọc ${D.data.length.toLocaleString('vi-VN')} đơn${D.from ? ` (từ ${D.from} đến ${D.to})` : ''}. Bấm "Tải file kết quả".`;
       $('rpDl').hidden = false; $('rpDl').textContent = '⬇ Tải ' + out.name;
-      logRp({ event: 'Báo cáo List order', orders: D.data.length, ok: 1, names: `${file.name} | ${D.from || '?'}–${D.to || '?'} | ${R.T.nw.tot.n} đơn, HĐ ${fmtTr(R.hdThang)}${R.extra.prev ? ', HĐ tháng trước ' + fmtTr(R.extra.prev) : ''}` });
+      logRp({ event: 'Báo cáo List order', orders: D.data.length, ok: 1, names: `${file.name} | ${D.from || '?'}–${D.to || '?'} | ${R.T.nw.tot.n} đơn, HĐ ${fmtTr(R.hdThang)}${R.extra.prev ? ', HĐ tháng trước ' + fmtTr(R.extra.prev) : ''}${R.extra.repl ? ', HĐ thay thế đơn hủy ' + fmtTr(R.extra.repl) : ''}` });
     } catch (e) { $('rpMsg').textContent = '❌ ' + (e.message || e); $('rpOut').hidden = true; $('rpDl').hidden = true; logRp({ event: 'Báo cáo List order', ok: 0, err: 1, names: `${file.name} | lỗi: ${String(e.message || e).slice(0, 150)}` }); }
     finally { btn.disabled = false; }
   };
