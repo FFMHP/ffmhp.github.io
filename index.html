@@ -513,7 +513,7 @@ button.danger{color:var(--err);border-color:var(--err)}
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v52</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v53</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
@@ -3323,23 +3323,13 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
       const sc = el('div', 'tbl-scroll'); sc.append(tb); wrap.append(sc); box.append(wrap);
     });
     // mã KH thiếu ACC / kho thiếu miền: cho team khai báo + Ghi nhớ (dùng chung cả team)
-    if (R.noAcc.length || Object.keys(R.noKv).length) {
+    // kho chưa có miền: không hiện (anh Tài 14/11), vẫn không tính vào bảng theo miền như file gốc
+    if (R.noAcc.length) {
       const w = el('div', 'rp-warn');
       const accList = [...new Set(Object.values(window.FFM_ACCMAP || {}).map(x => x[0]).concat(Object.values(SHARED.acc).map(x => x[0])).filter(Boolean))].sort();
       let dl = $('rpAccList'); if (!dl) { dl = el('datalist'); dl.id = 'rpAccList'; document.body.append(dl); }
       dl.innerHTML = ''; accList.forEach(a => { const o = el('option'); o.value = a; dl.append(o); });
       const KENH = ['MT', 'GT', 'B2B', 'HORECA', 'OTHERS'];
-      if (Object.keys(R.noKv).length) {
-        w.append(el('p', 'rp-w-h', '⚠ Kho chưa có miền (chưa tính vào bảng theo miền). Chọn miền rồi bấm Ghi nhớ:'));
-        Object.entries(R.noKv).forEach(([k, x]) => {
-          const row = el('div', 'rp-fix');
-          const sel = el('select'); sel.setAttribute('aria-label', 'Miền của ' + k);
-          ['', 'Miền Nam', 'Miền Bắc', 'Miền Trung'].forEach(m => { const o = el('option', '', m || '— chọn miền —'); o.value = m; sel.append(o); });
-          const b = el('button', 'small primary', 'Ghi nhớ'); b.type = 'button';
-          b.onclick = () => remember('kho', k, sel.value, '', b);
-          row.append(el('span', 'rp-k', `${k} (${x.n} đơn, ${fmtTr(x.v)})`), sel, b); w.append(row);
-        });
-      }
       if (R.noAcc.length) {
         w.append(el('p', 'rp-w-h', `⚠ ${R.noAcc.length} mã khách hàng chưa có trong DMKH (cột ACC đang trống). Nhập ACC + kênh rồi bấm Ghi nhớ:`));
         R.noAcc.forEach(([k, x]) => {
