@@ -47,14 +47,14 @@
     const head = []; for (let c = 0; c < width; c++) head.push(String(H2[c] || H1[c] || '').replace(/\r/g, '').trim());
     const col = re => head.findIndex(x => re.test(fold(x)));
     const C = {
-      so: col(/^ma phieu xuat/), code: col(/^ma khach hang/), val: col(/^tri gia don hang/), dvvc: col(/^ngay ban giao don hang cho dvvc/),
+      so: col(/^ma phieu xuat/), ddh: col(/^ngay ve don theo ddh/), code: col(/^ma khach hang/), val: col(/^tri gia don hang/), dvvc: col(/^ngay ban giao don hang cho dvvc/),
       inv: col(/^so hoa don/), amt: col(/^amount/), st: col(/^tinh trang don hang$/), sl: col(/smartlog/), kho: col(/^kho xuat/), stt: col(/^so tt/), de: col(/^ma phieu de xuat \(code\)/)
     };
-    const miss = Object.entries(C).filter(([k, v]) => v < 0 && !['stt', 'de'].includes(k)).map(([k]) => k);
+    const miss = Object.entries(C).filter(([k, v]) => v < 0 && !['stt', 'de', 'ddh'].includes(k)).map(([k]) => k);
     if (miss.length) throw new Error('File thiếu cột: ' + miss.join(', '));
     const range = rows.slice(0, h).map(r => r.join(' ')).join(' ').match(/(\d{1,2}\/\d{1,2}\/\d{4})\s*đến ngày:?\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
     const data = rows.slice(h + 2).filter(r => String(r[C.de >= 0 ? C.de : C.so] || '').trim() || num(r[C.val]));
-    return { head, C, data, from: range ? range[1] : '', to: range ? range[2] : '' };
+    return { head, H1: H1.map(x => String(x || '').replace(/\r/g, '')), H2: H2.map(x => String(x || '').replace(/\r/g, '')), C, data, from: range ? range[1] : '', to: range ? range[2] : '' };
   }
 
   function build(D, extra) {
@@ -98,38 +98,72 @@
     return { nat, huy, T, noAcc: [...noAcc], noKv, mm, prev, hdThang, extra, D };
   }
 
-  // ---- ghi file Excel ----
-  function toXlsx(R) {
-    const D = R.D, head = ['ACC', 'Kênh phân phối', 'Khu Vực', 'Đã giao', 'Đã xuất HĐ', 'PO HỦY'].concat(D.head);
-    const detail = list => [head].concat(list.map(o => [o.acc, o.kenh, o.kv || '#N/A', o.daGiao, o.daHD, o.isHuy].concat(D.head.map((_, i) => o.raw[i] === undefined ? '' : o.raw[i]))));
-    const A = [[], ['', '', '', '', '', 1, `Trị giá đơn hàng tháng ${R.mm} đã xuất hóa đơn`, R.hdThang],
-      ['', '', '', '', '', 2, `Trị giá đơn hàng tháng ${R.prev} đã xuất hóa đơn sang tháng ${R.mm}`, R.extra.prev || 0],
-      ['', '', '', '', '', 3, `Trị giá đơn hàng hủy - Đã xuất hóa đơn thay thế trong tháng ${R.mm}`, R.extra.repl || 0],
-      ['', '', '', '', '', 'Doanh số Net trừ hóa đơn hủy trong tháng (1+2)', '', R.hdThang + (R.extra.prev || 0)], []];
-    const block = (title, region, t) => {
-      A.push(['', '', '', '', region, title, 'Số lượng PO', 'Trị giá đơn hàng', 'Trị giá đã xuất HĐ trong tháng', 'Trị giá đơn hàng thiếu', region ? 'Note các đơn chưa giao' : '']);
-      t.rows.forEach(x => {
-        A.push(['', '', '', '', '', x.label, x.n, x.v, x.a, x.k === 'gx' || x.k === 'cx' ? x.thieu : '', x.note]);
-        if (x.k === 'cc' && region !== 'Miền Trung') { A.push(['', '', '', '', '', '                     Đơn Win DC']); A.push(['', '', '', '', '', '                     CÁC ACC CÒN LẠI', x.n, x.v]); }
-      });
-      A.push(['', '', '', '', '', 'Đơn hàng hủy (không tính vào tổng)', t.huy.n, t.huy.v]);
-      A.push(['', '', '', '', '', 'Tổng cộng', t.tot.n, t.tot.v, t.tot.a, t.tot.thieu]);
-      A.push([]);
+  // ---- ghi file Excel: sheet Total lấy nguyên mẫu (định dạng + công thức) từ file Total PO update của anh Tài ----
+  const EXCELJS = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+  let exP = null;
+  const loadExcelJS = () => window.ExcelJS ? Promise.resolve() : (exP = exP || new Promise((ok, no) => { const s = document.createElement('script'); s.src = (window.FFM_LIBS && window.FFM_LIBS.exceljs) || EXCELJS; s.onload = ok; s.onerror = () => { exP = null; no(new Error('Không tải được thư viện Excel (cần internet).')); }; document.head.append(s); }));
+  const REG_ROW = { 'Miền Nam': 18, 'Miền Bắc': 28, 'Miền Trung': 38 };
+  // tính lại kết quả các công thức đơn giản (+, -, SUM) để file mở bằng điện thoại/Zalo vẫn thấy số
+  function evalFormulas(ws, known) {
+    const memo = Object.assign({}, known), busy = {};
+    const val = a => {
+      if (a in memo) return memo[a];
+      if (busy[a]) return 0; busy[a] = 1;
+      const c = ws.getCell(a), f = c.formula;
+      let v = 0;
+      if (f) {
+        const expr = f.replace(/SUM\(([A-Z]+)(\d+):([A-Z]+)(\d+)\)/g, (_, c1, r1, c2, r2) => { let s = 0; for (let i = +r1; i <= +r2; i++) s += val(c1 + i); return '(' + s + ')'; })
+          .replace(/\b([A-Z]{1,2})(\d+)\b/g, (_, cc, rr) => '(' + val(cc + rr) + ')');
+        v = /^[\d\s.()+\-e]+$/.test(expr) ? Function('return ' + expr)() : 0;
+      } else v = typeof c.value === 'number' ? c.value : 0;
+      memo[a] = v; return v;
     };
-    block('Tình trạng đơn hàng Nation Wide', '', R.T.nw);
-    R.T.reg.forEach(x => block('Tình trạng đơn hàng ' + x.r, x.r, x.t));
-    const wsT = XLSX.utils.aoa_to_sheet(A);
-    wsT['!cols'] = [{ wch: 2 }, { wch: 2 }, { wch: 2 }, { wch: 2 }, { wch: 11 }, { wch: 44 }, { wch: 13 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 40 }];
-    Object.keys(wsT).forEach(a => { const c = wsT[a]; if (a[0] !== '!' && c.t === 'n' && Math.abs(c.v) >= 1000) c.z = '#,##0'; });
-    const wsN = XLSX.utils.aoa_to_sheet(detail(R.nat)), wsH = XLSX.utils.aoa_to_sheet(detail(R.huy));
-    [wsN, wsH].forEach(ws => { ws['!cols'] = head.map((h, i) => ({ wch: i < 6 ? 10 : Math.min(28, Math.max(10, String(h).length * 0.6)) })); ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(1, ws['!ref'] ? XLSX.utils.decode_range(ws['!ref']).e.r : 1), c: head.length - 1 } }) }; });
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, wsT, 'Total');
-    XLSX.utils.book_append_sheet(wb, wsN, 'National');
-    XLSX.utils.book_append_sheet(wb, wsH, 'ĐƠN HỦY');
+    return val;
+  }
+  async function toXlsx(R) {
+    await loadExcelJS();
+    const D = R.D, wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(Uint8Array.from(atob(TPL_TOTAL), c => c.charCodeAt(0)));
+    const ws = wb.getWorksheet('Total') || wb.worksheets[0];
+    // số liệu theo miền (đúng các ô COUNTIFS/SUMIFS của mẫu)
+    const known = { X3: 0, H3: R.extra.prev || 0 };
+    R.T.reg.forEach(({ r, t }) => {
+      const b = REG_ROW[r];
+      t.rows.forEach((x, i) => { known['G' + (b + 1 + i)] = x.n; known['H' + (b + 1 + i)] = x.v; known['I' + (b + 1 + i)] = x.a; });
+      const h = r === 'Miền Trung' ? b + 5 : b + 7; known['G' + h] = 0; known['H' + h] = 0;
+      const notes = { cx: b + 2, cc: b + 4 };
+      t.rows.forEach(x => { if (notes[x.k]) ws.getCell('L' + notes[x.k]).value = x.note || null; });
+    });
+    const val = evalFormulas(ws, known);
+    ws.eachRow({ includeEmpty: false }, row => row.eachCell({ includeEmpty: false }, cell => {
+      if (cell.formula) cell.value = { formula: cell.formula, result: val(cell.address) };
+    }));
+    ws.getCell('H3').value = R.extra.prev || null;
+    ws.getCell('H4').value = null;
+    ws.getCell('G2').value = `Trị giá đơn hàng tháng ${R.mm} đã xuất hóa đơn`;
+    ws.getCell('G3').value = `Trị giá đơn hàng tháng ${R.prev} đã xuất hóa đơn sang tháng ${R.mm}`;
+    ws.getCell('G4').value = `Trị giá đơn hàng hủy - Đã xuất hóa đơn thay thế trong tháng ${R.mm}`;
+    // National + ĐƠN HỦY: cùng bố cục file gốc (dữ liệu từ dòng 13; cột C khu vực, D đã giao, E đã xuất HĐ, F hủy, O trị giá, AA amount, AJ tình trạng)
+    const keep = D.head.map((h, i) => i).filter(i => i !== D.C.ddh);
+    const head1 = ['ACC', 'Kênh phân phối', 'Khu Vực', 'Đã giao', 'Đã xuất HĐ', 'PO HỦY'].concat(keep.map(i => D.H1[i] || ''));
+    const head2 = ['', '', '', '', '', ''].concat(keep.map(i => D.H2[i] || ''));
+    const sheet = (name, list) => {
+      const s = wb.addWorksheet(name, { views: [{ state: 'frozen', ySplit: 12, xSplit: 0 }] });
+      s.getRow(11).values = head1; s.getRow(12).values = head2;
+      [11, 12].forEach(r => { const row = s.getRow(r); row.height = 42; row.eachCell(c => { c.font = { bold: true, size: 10 }; c.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } }; c.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }; }); });
+      list.forEach((o, i) => { s.getRow(13 + i).values = [o.acc, o.kenh, o.kv || '#N/A', o.daGiao, o.daHD, o.isHuy].concat(keep.map(k => o.raw[k] === undefined || o.raw[k] === null ? '' : o.raw[k])); });
+      s.columns.forEach((c, i) => { c.width = i < 6 ? 11 : 16; });
+      [15, 27].forEach(c => { s.getColumn(c).numFmt = '#,##0'; });
+      s.autoFilter = { from: { row: 12, column: 1 }, to: { row: 12 + list.length, column: head1.length } };
+      return s;
+    };
+    sheet('National', R.nat);
+    sheet('ĐƠN HỦY ', R.huy);
+    wb.calcProperties = Object.assign({}, wb.calcProperties, { fullCalcOnLoad: true });
+    const buf = await wb.xlsx.writeBuffer();
     const [d, mo, y] = (R.D.to || '').split('/');
     const name = `Total PO update ${d ? `${d.padStart(2, '0')}.${mo.padStart(2, '0')}.${y.slice(2)}` : new Date().toISOString().slice(0, 10)}.xlsx`;
-    return { wb, name };
+    return { blob: new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), name };
   }
 
   // ---- hiển thị ----
@@ -164,6 +198,7 @@
     if (warn.length) { const w = el('div', 'rp-warn'); warn.forEach(x => w.append(el('p', '', '⚠ ' + x))); box.append(w); }
   }
 
+  $('rpPrev').addEventListener('blur', e => { const n = Number(e.target.value.replace(/\D/g, '')); e.target.value = n ? n.toLocaleString('vi-VN') : ''; });
   $('rpGo').onclick = async () => {
     if (!file) return;
     const btn = $('rpGo'); btn.disabled = true; $('rpMsg').textContent = 'Đang đọc file…';
@@ -171,8 +206,9 @@
       await (window.FFM_DATA && window.FFM_DATA.ready);
       if (!window.FFM_ACCMAP) $('rpMsg').textContent = 'Chưa tải được DMKH, cột ACC sẽ trống…';
       const D = readData(new Uint8Array(await file.arrayBuffer()));
-      const R = build(D, { prev: num($('rpPrev').value), repl: num($('rpRepl').value) });
-      out = toXlsx(R);
+      const R = build(D, { prev: Number(String($('rpPrev').value).replace(/\D/g, '')) || 0 });
+      $('rpMsg').textContent = 'Đang tạo file Excel…';
+      out = await toXlsx(R);
       show(R);
       $('rpMsg').textContent = `Đọc ${D.data.length.toLocaleString('vi-VN')} đơn${D.from ? ` (từ ${D.from} đến ${D.to})` : ''}. Bấm "Tải file kết quả".`;
       $('rpDl').hidden = false; $('rpDl').textContent = '⬇ Tải ' + out.name;
@@ -180,5 +216,5 @@
     } catch (e) { $('rpMsg').textContent = '❌ ' + (e.message || e); $('rpOut').hidden = true; $('rpDl').hidden = true; }
     finally { btn.disabled = false; }
   };
-  $('rpDl').onclick = () => { if (out) XLSX.writeFile(out.wb, out.name, { compression: true }); };
+  $('rpDl').onclick = () => { if (!out) return; const a = document.createElement('a'); a.href = URL.createObjectURL(out.blob); a.download = out.name; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); };
 })();
