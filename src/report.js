@@ -18,6 +18,7 @@
     'Kho SEC Hà Nội': 'Miền Bắc', 'Kho DC Đồng An': 'Miền Nam'
   };
   const REGIONS = ['Miền Nam', 'Miền Bắc', 'Miền Trung'];
+  window.FFM_KV = KV;
   const fold = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().replace(/\s+/g, ' ').trim();
   // khai báo của team (sheet "Khai báo báo cáo"): acc {MÃ: [ACC, Kênh]}, kho {tên kho: Miền}
   let SHARED = { acc: {}, kho: {} };
@@ -113,6 +114,7 @@
   const EXCELJS = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
   let exP = null;
   const loadExcelJS = () => window.ExcelJS ? Promise.resolve() : (exP = exP || new Promise((ok, no) => { const s = document.createElement('script'); s.src = (window.FFM_LIBS && window.FFM_LIBS.exceljs) || EXCELJS; s.onload = ok; s.onerror = () => { exP = null; no(new Error('Không tải được thư viện Excel (cần internet).')); }; document.head.append(s); }));
+  window.FFM_loadExcelJS = loadExcelJS;
   const REG_ROW = { 'Miền Nam': 18, 'Miền Bắc': 28, 'Miền Trung': 38 };
   // tính lại kết quả các công thức đơn giản (+, -, SUM) để file mở bằng điện thoại/Zalo vẫn thấy số
   function evalFormulas(ws, known) {
@@ -171,6 +173,8 @@
     };
     sheet('National', R.nat);
     sheet('ĐƠN HỦY ', R.huy);
+    // bản thử (beta): thêm sheet khác nếu có, vd "Giao thiếu theo ACC"
+    if (typeof window.FFM_extraSheets === 'function') { try { await window.FFM_extraSheets(wb); } catch (e) { console.warn('[extra sheet]', e); } }
     wb.calcProperties = Object.assign({}, wb.calcProperties, { fullCalcOnLoad: true });
     const buf = await wb.xlsx.writeBuffer();
     const [d, mo, y] = (R.D.to || '').split('/');

@@ -289,6 +289,11 @@ button.danger{color:var(--err);border-color:var(--err)}
 .rp-tbl tr.tot td{font-weight:700}
 .rp-fix{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}.rp-fix .rp-k{flex:1 1 260px;min-width:0}.rp-fix input,.rp-fix select{border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--bg);color:var(--fg);font:inherit}.rp-fix input{width:150px}.rp-fix select{width:160px;flex:0 0 auto}.rp-fix button{width:auto;flex:0 0 auto}.rp-fix input{flex:0 0 auto}@media (max-width:560px){.rp-fix .rp-k{flex-basis:100%}}.rp-w-h{font-weight:600}
 .rp-warn{margin-top:14px;border-left:3px solid var(--warn,#b7791f);padding:6px 10px;font-size:.85rem}.rp-warn p{margin:4px 0}
+.gh-beta{display:inline-block;margin:0 0 6px;padding:2px 10px;border-radius:999px;background:#fff3cd;color:#7a5a00;font-size:.8rem;font-weight:600}
+.gh{margin-top:16px}.gh-filters{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 10px}.gh-filters label{display:flex;flex-direction:column;gap:3px;font-size:.82rem;color:var(--muted)}
+.gh-filters select,.gh-filters input{border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--bg);color:var(--fg);font:inherit;min-width:150px;width:auto}.gh-q{flex:1 1 220px}.gh-q input{width:100%}
+.gh-acc{border:1px solid var(--line);border-radius:8px;margin:8px 0;padding:0 10px}.gh-acc summary{cursor:pointer;padding:10px 0;list-style-position:inside}.gh-acc[open] summary{border-bottom:1px solid var(--line)}
+.gh-v{color:var(--err,#b42318)}.gh-acc td.bc{white-space:nowrap;font-variant-numeric:tabular-nums}.gh-acc td.why{font-size:.82rem}.gh-acc tr.sub td{border-top:0;padding-top:0}
 </style>
 <div class="scene" aria-hidden="true">
 <svg viewBox="0 0 1200 170" preserveAspectRatio="xMidYMax meet">
@@ -441,6 +446,7 @@ button.danger{color:var(--err);border-color:var(--err)}
     </div>
     <div id="rpOut" hidden></div>
   </section>
+<!--BETA_GHD-->
 </div>
 
 <div class="wrap page" id="pageOrders" hidden>
@@ -516,7 +522,7 @@ button.danger{color:var(--err);border-color:var(--err)}
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v54</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v55</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
@@ -772,23 +778,37 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
     const p = g.getImageData(0, 0, W, H).data, dark = new Uint8Array(W * H);
     for (let i = 0, j = 0; i < p.length; i += 4, j++) dark[j] = (p[i] * 0.299 + p[i + 1] * 0.587 + p[i + 2] * 0.114) < 150 ? 1 : 0;
     // dòng kẻ ngang: chuỗi điểm tối liên tục dài nhất trên mỗi hàng
-    const runRow = y => { let best = 0, cur = 0, s0 = 0, bs = 0; for (let x = 0; x < W; x++) { if (dark[y * W + x]) { if (!cur) s0 = x; cur++; if (cur > best) { best = cur; bs = s0; } } else cur = 0; } return { len: best, x0: bs, x1: bs + best }; };
+    // bản scan hơi nghiêng: đường kẻ ngang lệch vài px qua bề ngang bảng -> xét dải ±2 dòng (B) khi tìm đoạn tối liền mạch
+    const B = 2, isD = (x, y) => { for (let k = -B; k <= B; k++) { const yy = y + k; if (yy >= 0 && yy < H && dark[yy * W + x]) return 1; } return 0; };
+    const runRow = y => { let best = 0, cur = 0, s0 = 0, bs = 0; for (let x = 0; x < W; x++) { if (isD(x, y)) { if (!cur) s0 = x; cur++; if (cur > best) { best = cur; bs = s0; } } else cur = 0; } return { len: best, x0: bs, x1: bs + best }; };
     const hl = [];
     for (let y = 0; y < H; y++) { const r = runRow(y); if (r.len > W * 0.5) hl.push({ y, x0: r.x0, x1: r.x1 }); }
     const group = (arr, key) => { const out = []; for (const v of arr) { const last = out[out.length - 1]; if (last && v[key] - last.end <= 3) { last.end = v[key]; last.items.push(v); } else out.push({ start: v[key], end: v[key], items: [v] }); } return out.map(o => Object.assign({ c: (o.start + o.end) / 2 }, o)); };
-    const hLines = group(hl, 'y');
+    let hLines = group(hl, 'y');
     if (hLines.length < 3) return null;
+    // chỉ giữ cụm đường kẻ của bảng hàng: bỏ các đường ngang rời xa bảng (gạch chân chữ ký, viền trang scan…)
+    if (hLines.length > 3) {
+      const gaps = hLines.slice(1).map((l, i) => l.c - hLines[i].c), mg = med(gaps);
+      const seqs = []; let cur = [hLines[0]];
+      for (let i = 1; i < hLines.length; i++) { if (gaps[i - 1] <= mg * 3) cur.push(hLines[i]); else { seqs.push(cur); cur = [hLines[i]]; } }
+      seqs.push(cur);
+      hLines = seqs.sort((a, b) => b.length - a.length)[0];
+      if (hLines.length < 3) return null;
+    }
     // chọn cụm đường kẻ ngang cách đều nhau nhiều nhất (thân bảng)
     const tx0 = med(hLines.map(l => l.items[0].x0)), tx1 = med(hLines.map(l => l.items[0].x1));
     const top = hLines[0].c, bot = hLines[hLines.length - 1].c;
     const vl = [];
     for (let x = Math.max(0, Math.round(tx0) - 3); x <= Math.min(W - 1, Math.round(tx1) + 3); x++) {
-      let n = 0; for (let y = Math.round(top); y <= Math.round(bot); y++) n += dark[y * W + x];
+      let n = 0; for (let y = Math.round(top); y <= Math.round(bot); y++) { let d = 0; for (let k = -B; k <= B && !d; k++) { const xx = x + k; if (xx >= 0 && xx < W) d = dark[y * W + xx]; } n += d; }
       if (n > (bot - top) * 0.6) vl.push({ x });
     }
     const vLines = group(vl, 'x');
     if (vLines.length < 4) return null;
-    return { rows: hLines.map(l => l.c), cols: vLines.map(l => l.c) };
+    const cols = vLines.map(l => l.c);
+    // bản scan bị cắt mép phải: không thấy viền phải của cột cuối -> lấy mép phải đường kẻ ngang làm viền
+    if (tx1 - cols[cols.length - 1] > 40) cols.push(W - 1);
+    return { rows: hLines.map(l => l.c), cols };
   }
   async function readBox(worker, src, box, whitelist, psm) {
     await worker.setParameters({ tessedit_char_whitelist: whitelist || '', tessedit_pageseg_mode: psm || '7' });
@@ -796,6 +816,26 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
     return (data.text || '').replace(/\s+/g, ' ').trim();
   }
 
+  // PDF scan (CamScanner…): không có lớp chữ -> vẽ từng trang thành ảnh PNG để nhận dạng như ảnh chụp
+  async function pdfHasText(buf) {
+    const doc = await root.pdfjsLib.getDocument({ data: new Uint8Array(buf).slice(), isEvalSupported: false }).promise;
+    let n = 0;
+    for (let p = 1; p <= doc.numPages; p++) n += (await (await doc.getPage(p)).getTextContent()).items.filter(it => (it.str || '').trim()).length;
+    return n >= 20;
+  }
+  async function pdfPageImages(buf, targetW) {
+    const doc = await root.pdfjsLib.getDocument({ data: new Uint8Array(buf).slice(), isEvalSupported: false }).promise;
+    const out = [];
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p), v1 = page.getViewport({ scale: 1 });
+      const vp = page.getViewport({ scale: (targetW || 2200) / v1.width });
+      const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+      await page.render({ canvasContext: g, viewport: vp }).promise;
+      out.push(await new Promise(ok => c.toBlob(ok, 'image/png')));
+    }
+    return out;
+  }
   async function imageParse(blob, onProgress, tessOpts) {
     const img = await loadImage(blob);
     const k = Math.max(1, 1600 / img.naturalWidth), src = document.createElement('canvas');
@@ -810,15 +850,22 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
     const res = parseWords(words);
     delete res.error; res.rows = [];
     // ảnh mờ: đọc lại góc trên bên phải (Số Đơn, Ngày đặt) ở độ phóng lớn hơn
-    if (!res.po || !res.orderDate) {
+    {
+      // đọc nhiều kiểu xử lý ảnh rồi bỏ phiếu (kể cả lần đọc cả trang): số nào xuất hiện nhiều nhất thì lấy; các lần đọc khác nhau -> báo chưa chắc
       const box = { x0: img.naturalWidth * 0.55, x1: img.naturalWidth, y0: 0, y1: img.naturalHeight * 0.2 };
-      for (const v of [{ s: 4, m: 'gray' }, { s: 3, m: 'otsu' }]) {
+      const pos = res.po ? [res.po] : [], dates = res.orderDate ? [res.orderDate] : [];
+      for (const v of [{ s: 4, m: 'gray' }, { s: 3, m: 'otsu' }, { s: 5, m: 'gray' }, { s: 2, m: 'otsu' }]) {
         await worker.setParameters({ tessedit_char_whitelist: '', tessedit_pageseg_mode: '6' });
         const t = ((await worker.recognize(cropCanvas(img, box, v.s, v.m))).data.text || '');
-        if (!res.po) { const m = t.replace(/[ \t]/g, '').match(/\d{18}/); if (m) res.po = m[0]; }
-        if (!res.orderDate) { const ln = t.split('\n').find(x => /ng[aà]y\s*[dđ][aặ]t/i.test(x)) || ''; const m = ln.match(/(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(20\d\d)/); if (m) res.orderDate = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
-        if (res.po && res.orderDate) break;
+        const mp = t.replace(/[ \t]/g, '').match(/\d{18}/); if (mp) pos.push(mp[0]);
+        const ln = t.split('\n').find(x => /ng[aà]y\s*[dđ][aặ]t/i.test(x)) || ''; const md = ln.match(/(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(20\d\d)/); if (md) dates.push(`${md[3]}-${md[2].padStart(2, '0')}-${md[1].padStart(2, '0')}`);
+        const top = a => { const c = {}; a.forEach(x => c[x] = (c[x] || 0) + 1); return Object.entries(c).sort((x, y) => y[1] - x[1])[0] || [null, 0]; };
+        if (top(pos)[1] >= 2 && top(dates)[1] >= 2) break;
       }
+      const vote = a => { const c = {}; a.forEach(x => c[x] = (c[x] || 0) + 1); const e = Object.entries(c).sort((x, y) => y[1] - x[1]); return e.length ? { v: e[0][0], sure: e[0][1] >= 2 && (e.length === 1 || e[1][1] < e[0][1]) } : null; };
+      const vp = vote(pos), vd = vote(dates);
+      if (vp) { res.po = vp.v; res.poUnsure = !vp.sure; }
+      if (vd) { res.orderDate = vd.v; res.dateUnsure = !vd.sure; }
     }
     const grid = findGrid(src);
     if (!grid) { res.error = 'Không tìm thấy bảng hàng (đường kẻ bảng) trong ảnh. Ảnh có bị mờ, nghiêng hay cắt mất bảng không?'; return res; }
@@ -1009,7 +1056,7 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
   }
 
   root.__lastAeonItems = null;
-  const api = { pdfItems, kktcImageParse, parseKktcTokens, aeonPdfParse, snapCatalog, pickBarcode, parseQty, gtinOk, parseNum, parseWords, pdfWords, imageParse, fold };
+  const api = { pdfHasText, pdfPageImages, pdfItems, kktcImageParse, parseKktcTokens, aeonPdfParse, snapCatalog, pickBarcode, parseQty, gtinOk, parseNum, parseWords, pdfWords, imageParse, fold };
   if (typeof module !== 'undefined') module.exports = api; else root.FUJI = api;
 })(typeof window !== 'undefined' ? window : globalThis);
 </script><script>
@@ -1907,9 +1954,27 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
       async parseFile(f, onProgress, libs) {
         const F = root.FUJI, isPdf = /\.pdf$/i.test(f.name);
         let res;
+        let scanned = false;
         if (isPdf) {
           try { await libs.pdf(); } catch (e) { return { error: 'Không tải được bộ đọc PDF (cần internet).' }; }
+          scanned = !(await F.pdfHasText(f.buf));
+        }
+        if (isPdf && !scanned) {
           res = F.parseWords(await F.pdfWords(f.buf)); res.source = 'pdf';
+        } else if (scanned) {
+          // PDF scan (CamScanner, máy scan): không có chữ -> chuyển từng trang thành ảnh rồi nhận dạng như ảnh chụp
+          try { await libs.ocr(); } catch (e) { return { error: 'Không tải được bộ nhận dạng chữ (cần internet).' }; }
+          onProgress && onProgress('PDF là bản scan, đang chuyển thành ảnh để đọc…');
+          const imgs = await F.pdfPageImages(f.buf);
+          for (let i = 0; i < imgs.length; i++) {
+            let r;
+            try { r = await F.imageParse(imgs[i], m => onProgress && onProgress(`Trang ${i + 1}/${imgs.length}: ${m}`), libs.tessOpts); }
+            catch (e) { return { error: 'Không đọc được PDF scan: ' + (e && e.message || e) }; }
+            if (!res) res = r;
+            else { if (r.rows && r.rows.length) res.rows = (res.rows || []).concat(r.rows); if (res.error && !r.error) delete res.error; ['po', 'store', 'orderDate', 'total'].forEach(k => { if (res[k] == null || res[k] === '') res[k] = r[k]; }); }
+          }
+          if (res && res.rows && res.rows.length) delete res.error;
+          res.source = 'image'; res.scanPdf = true;
         } else {
           try { await libs.ocr(); } catch (e) { return { error: 'Không tải được bộ nhận dạng chữ. Đọc ảnh chỉ chạy trong file FFM Chuyen Don.html mở trên máy có internet (link web không hỗ trợ). Nếu có file PDF gốc, dùng PDF.' }; }
           try { res = await F.imageParse(new Blob([f.buf]), onProgress, libs.tessOpts); }
@@ -1919,9 +1984,11 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
         if (res.error) return { error: res.error };
         const issues = [];
         const fnPo = (norm(f.name).match(/\d{18}/) || [])[0] || '';
-        const po = res.po || fnPo;
+        // ảnh/scan: số đơn trong tên file (người gõ) đáng tin hơn chữ nhận dạng từ ảnh
+        const po = res.source === 'image' ? (fnPo || res.po) : (res.po || fnPo);
         if (!po) issues.push({ key: 'po', level: 'err', msg: 'Không đọc được Số Đơn (18 số) trên phiếu. Nhập tay.' });
-        else if (res.po && fnPo && res.po !== fnPo) issues.push({ level: 'warn', msg: `Số đơn trên phiếu (${res.po}) khác số trong tên file (${fnPo}). Đang dùng số trên phiếu.` });
+        else if (res.po && fnPo && res.po !== fnPo) issues.push({ level: 'warn', msg: `Số đơn trên phiếu (${res.po}) khác số trong tên file (${fnPo}). Đang dùng số ${po === fnPo ? 'trong tên file' : 'trên phiếu'}.` });
+        else if (res.source === 'image' && !fnPo) issues.push({ key: 'po', level: 'warn', msg: `Số đơn đọc từ ảnh: ${po}. Ảnh scan dễ đọc nhầm số (vd 6 thành 0), so lại với phiếu trước khi tải.` });
         const fnStore = norm(f.name).replace(/\.[a-z]+$/i, '').replace(/\d{18}/, '').replace(/^\s*20\d\d[.\-_]\d{1,2}[.\-_]\d{1,2}\s*-?/, '').replace(/[-_\s]+$/, '');
         let m = res.store ? matchCustomer(this.customers, res.store, this.brand) : { hit: null };
         let via = res.store;
@@ -1930,11 +1997,12 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
         if (!m.hit) issues.push({ key: 'customer', level: 'err', msg: `Không dò được cửa hàng "${res.store || fnStore}" trong DMKH. Chọn cửa hàng ở ô Mã khách hàng.` });
         else if (!m.exact) issues.push({ level: 'warn', msg: `Khớp gần đúng: "${via}" → ${m.hit.code} · ${m.hit.name}. Kiểm tra lại.` });
         if (!res.orderDate) issues.push({ level: 'warn', msg: 'Không đọc được Ngày đặt trên phiếu; ngày giao tính theo ô Ngày về đơn.' });
+        if (res.dateUnsure) issues.push({ level: 'warn', msg: `Ngày đặt đọc từ ảnh chưa chắc (${(res.orderDate || '').split('-').reverse().join('/')}). So lại với phiếu.` });
         const lines = res.rows.map((x, i) => validateFuji({ row: i + 1, barcode: x.barcode || '', qty: x.qty, price: x.price, amount: x.amount, preview: x.preview || '', bcState: res.source === 'pdf' || x.bcSure ? 'sure' : x.bcSnapped ? 'snap' : x.bcGuessed ? 'guess' : 'weak' }));
         const sumAmt = res.rows.reduce((a, x) => a + (x.amount || 0), 0);
         const totOk = res.total != null && Math.abs(sumAmt - res.total) <= 1;
         if (res.total != null && !totOk) issues.push({ level: 'warn', msg: `Tổng thành tiền các dòng (${sumAmt.toLocaleString('vi-VN')}) khác "Tổng giá trị đơn hàng" trên phiếu (${res.total.toLocaleString('vi-VN')}). Có thể thiếu dòng hoặc đọc sai số.` });
-        issues.push({ level: 'info', msg: `Đọc từ ${res.source === 'pdf' ? 'PDF' : 'ảnh'}: ${lines.length} dòng${totOk ? ', tổng tiền khớp phiếu (' + res.total.toLocaleString('vi-VN') + ')' : ''}.${res.source === 'image' ? ' Ô đỏ là đọc nhầm: sửa trực tiếp trong bảng theo phiếu.' : ''}` });
+        issues.push({ level: 'info', msg: `Đọc từ ${res.source === 'pdf' ? 'PDF' : res.scanPdf ? 'PDF scan (nhận dạng như ảnh)' : 'ảnh'}: ${lines.length} dòng${totOk ? ', tổng tiền khớp phiếu (' + res.total.toLocaleString('vi-VN') + ')' : ''}.${res.source === 'image' ? ' Ô đỏ là đọc nhầm: sửa trực tiếp trong bảng theo phiếu.' : ''}` });
         return { fixedPo: true, po, customer, store: res.store || fnStore, orderDate: res.orderDate || '', lines, issues, editable: true, source: res.source };
       }
     }
@@ -2308,7 +2376,7 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
    Anh Tài chỉ cần thay file Excel cùng tên trên GitHub là cả team có bảng mới.
    Không tải được (mở file HTML trên máy) thì dùng bảng gắn sẵn trong trang. */
 (function (root) {
-  const BASE = 'data/';
+  const BASE = root.FFM_DATA_BASE || 'data/';
   const FILES = { dmkh: 'DMKH.xlsx', dmsp: 'DMSP.xlsx', map: 'Code chuyển đổi.xlsx', tpl: 'Form final.xlsx' };
   const PREFIX = { KKTC: 'KKTC', MOR: 'MORGT', BRG: 'BRGMART', AEON: 'AEON', SOIBIEN: 'SOIBIEN', ANNHIEN: 'ANHN', MIOMIO: 'MIOMIOW', FANTASY: 'FANTASY', FGARDEN: 'FGARDEN', HIENLUONG: 'HIENLUONG', HINODE: 'HINODE', JAPAUS: 'JAPAUS', SAKUKO: 'SAKUKO', SIBA: 'SIBA', ANHVIET: 'ANHVIET', CLEVER: 'CLEVERFOOD', FMKT: 'FMKTHNI', KAISER: 'CVS0', OHMEE: 'OHMEE', RFOOD: 'RFOODTP', TOP5: 'TOP5_MART', WEFRESH: 'WEFRESH', KPLAZA: 'KPLAZA', KOREAN: 'KOREAN', LMLUONG: 'LMLG', TATAMART: 'TATAMAT' };
   const LABEL = { dmkh: 'DMKH', dmsp: 'DMSP', map: 'Code chuyển đổi', tpl: 'Form final' };
@@ -3140,6 +3208,7 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
     'Kho SEC Hà Nội': 'Miền Bắc', 'Kho DC Đồng An': 'Miền Nam'
   };
   const REGIONS = ['Miền Nam', 'Miền Bắc', 'Miền Trung'];
+  window.FFM_KV = KV;
   const fold = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().replace(/\s+/g, ' ').trim();
   // khai báo của team (sheet "Khai báo báo cáo"): acc {MÃ: [ACC, Kênh]}, kho {tên kho: Miền}
   let SHARED = { acc: {}, kho: {} };
@@ -3235,6 +3304,7 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
   const EXCELJS = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
   let exP = null;
   const loadExcelJS = () => window.ExcelJS ? Promise.resolve() : (exP = exP || new Promise((ok, no) => { const s = document.createElement('script'); s.src = (window.FFM_LIBS && window.FFM_LIBS.exceljs) || EXCELJS; s.onload = ok; s.onerror = () => { exP = null; no(new Error('Không tải được thư viện Excel (cần internet).')); }; document.head.append(s); }));
+  window.FFM_loadExcelJS = loadExcelJS;
   const REG_ROW = { 'Miền Nam': 18, 'Miền Bắc': 28, 'Miền Trung': 38 };
   // tính lại kết quả các công thức đơn giản (+, -, SUM) để file mở bằng điện thoại/Zalo vẫn thấy số
   function evalFormulas(ws, known) {
@@ -3293,6 +3363,8 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
     };
     sheet('National', R.nat);
     sheet('ĐƠN HỦY ', R.huy);
+    // bản thử (beta): thêm sheet khác nếu có, vd "Giao thiếu theo ACC"
+    if (typeof window.FFM_extraSheets === 'function') { try { await window.FFM_extraSheets(wb); } catch (e) { console.warn('[extra sheet]', e); } }
     wb.calcProperties = Object.assign({}, wb.calcProperties, { fullCalcOnLoad: true });
     const buf = await wb.xlsx.writeBuffer();
     const [d, mo, y] = (R.D.to || '').split('/');

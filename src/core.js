@@ -892,9 +892,27 @@
       async parseFile(f, onProgress, libs) {
         const F = root.FUJI, isPdf = /\.pdf$/i.test(f.name);
         let res;
+        let scanned = false;
         if (isPdf) {
           try { await libs.pdf(); } catch (e) { return { error: 'Không tải được bộ đọc PDF (cần internet).' }; }
+          scanned = !(await F.pdfHasText(f.buf));
+        }
+        if (isPdf && !scanned) {
           res = F.parseWords(await F.pdfWords(f.buf)); res.source = 'pdf';
+        } else if (scanned) {
+          // PDF scan (CamScanner, máy scan): không có chữ -> chuyển từng trang thành ảnh rồi nhận dạng như ảnh chụp
+          try { await libs.ocr(); } catch (e) { return { error: 'Không tải được bộ nhận dạng chữ (cần internet).' }; }
+          onProgress && onProgress('PDF là bản scan, đang chuyển thành ảnh để đọc…');
+          const imgs = await F.pdfPageImages(f.buf);
+          for (let i = 0; i < imgs.length; i++) {
+            let r;
+            try { r = await F.imageParse(imgs[i], m => onProgress && onProgress(`Trang ${i + 1}/${imgs.length}: ${m}`), libs.tessOpts); }
+            catch (e) { return { error: 'Không đọc được PDF scan: ' + (e && e.message || e) }; }
+            if (!res) res = r;
+            else { if (r.rows && r.rows.length) res.rows = (res.rows || []).concat(r.rows); if (res.error && !r.error) delete res.error; ['po', 'store', 'orderDate', 'total'].forEach(k => { if (res[k] == null || res[k] === '') res[k] = r[k]; }); }
+          }
+          if (res && res.rows && res.rows.length) delete res.error;
+          res.source = 'image'; res.scanPdf = true;
         } else {
           try { await libs.ocr(); } catch (e) { return { error: 'Không tải được bộ nhận dạng chữ. Đọc ảnh chỉ chạy trong file FFM Chuyen Don.html mở trên máy có internet (link web không hỗ trợ). Nếu có file PDF gốc, dùng PDF.' }; }
           try { res = await F.imageParse(new Blob([f.buf]), onProgress, libs.tessOpts); }
@@ -904,9 +922,11 @@
         if (res.error) return { error: res.error };
         const issues = [];
         const fnPo = (norm(f.name).match(/\d{18}/) || [])[0] || '';
-        const po = res.po || fnPo;
+        // ảnh/scan: số đơn trong tên file (người gõ) đáng tin hơn chữ nhận dạng từ ảnh
+        const po = res.source === 'image' ? (fnPo || res.po) : (res.po || fnPo);
         if (!po) issues.push({ key: 'po', level: 'err', msg: 'Không đọc được Số Đơn (18 số) trên phiếu. Nhập tay.' });
-        else if (res.po && fnPo && res.po !== fnPo) issues.push({ level: 'warn', msg: `Số đơn trên phiếu (${res.po}) khác số trong tên file (${fnPo}). Đang dùng số trên phiếu.` });
+        else if (res.po && fnPo && res.po !== fnPo) issues.push({ level: 'warn', msg: `Số đơn trên phiếu (${res.po}) khác số trong tên file (${fnPo}). Đang dùng số ${po === fnPo ? 'trong tên file' : 'trên phiếu'}.` });
+        else if (res.source === 'image' && !fnPo) issues.push({ key: 'po', level: 'warn', msg: `Số đơn đọc từ ảnh: ${po}. Ảnh scan dễ đọc nhầm số (vd 6 thành 0), so lại với phiếu trước khi tải.` });
         const fnStore = norm(f.name).replace(/\.[a-z]+$/i, '').replace(/\d{18}/, '').replace(/^\s*20\d\d[.\-_]\d{1,2}[.\-_]\d{1,2}\s*-?/, '').replace(/[-_\s]+$/, '');
         let m = res.store ? matchCustomer(this.customers, res.store, this.brand) : { hit: null };
         let via = res.store;
@@ -915,11 +935,12 @@
         if (!m.hit) issues.push({ key: 'customer', level: 'err', msg: `Không dò được cửa hàng "${res.store || fnStore}" trong DMKH. Chọn cửa hàng ở ô Mã khách hàng.` });
         else if (!m.exact) issues.push({ level: 'warn', msg: `Khớp gần đúng: "${via}" → ${m.hit.code} · ${m.hit.name}. Kiểm tra lại.` });
         if (!res.orderDate) issues.push({ level: 'warn', msg: 'Không đọc được Ngày đặt trên phiếu; ngày giao tính theo ô Ngày về đơn.' });
+        if (res.dateUnsure) issues.push({ level: 'warn', msg: `Ngày đặt đọc từ ảnh chưa chắc (${(res.orderDate || '').split('-').reverse().join('/')}). So lại với phiếu.` });
         const lines = res.rows.map((x, i) => validateFuji({ row: i + 1, barcode: x.barcode || '', qty: x.qty, price: x.price, amount: x.amount, preview: x.preview || '', bcState: res.source === 'pdf' || x.bcSure ? 'sure' : x.bcSnapped ? 'snap' : x.bcGuessed ? 'guess' : 'weak' }));
         const sumAmt = res.rows.reduce((a, x) => a + (x.amount || 0), 0);
         const totOk = res.total != null && Math.abs(sumAmt - res.total) <= 1;
         if (res.total != null && !totOk) issues.push({ level: 'warn', msg: `Tổng thành tiền các dòng (${sumAmt.toLocaleString('vi-VN')}) khác "Tổng giá trị đơn hàng" trên phiếu (${res.total.toLocaleString('vi-VN')}). Có thể thiếu dòng hoặc đọc sai số.` });
-        issues.push({ level: 'info', msg: `Đọc từ ${res.source === 'pdf' ? 'PDF' : 'ảnh'}: ${lines.length} dòng${totOk ? ', tổng tiền khớp phiếu (' + res.total.toLocaleString('vi-VN') + ')' : ''}.${res.source === 'image' ? ' Ô đỏ là đọc nhầm: sửa trực tiếp trong bảng theo phiếu.' : ''}` });
+        issues.push({ level: 'info', msg: `Đọc từ ${res.source === 'pdf' ? 'PDF' : res.scanPdf ? 'PDF scan (nhận dạng như ảnh)' : 'ảnh'}: ${lines.length} dòng${totOk ? ', tổng tiền khớp phiếu (' + res.total.toLocaleString('vi-VN') + ')' : ''}.${res.source === 'image' ? ' Ô đỏ là đọc nhầm: sửa trực tiếp trong bảng theo phiếu.' : ''}` });
         return { fixedPo: true, po, customer, store: res.store || fnStore, orderDate: res.orderDate || '', lines, issues, editable: true, source: res.source };
       }
     }

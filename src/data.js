@@ -2,7 +2,7 @@
    Anh Tài chỉ cần thay file Excel cùng tên trên GitHub là cả team có bảng mới.
    Không tải được (mở file HTML trên máy) thì dùng bảng gắn sẵn trong trang. */
 (function (root) {
-  const BASE = 'data/';
+  const BASE = root.FFM_DATA_BASE || 'data/';
   const FILES = { dmkh: 'DMKH.xlsx', dmsp: 'DMSP.xlsx', map: 'Code chuyển đổi.xlsx', tpl: 'Form final.xlsx' };
   const PREFIX = { KKTC: 'KKTC', MOR: 'MORGT', BRG: 'BRGMART', AEON: 'AEON', SOIBIEN: 'SOIBIEN', ANNHIEN: 'ANHN', MIOMIO: 'MIOMIOW', FANTASY: 'FANTASY', FGARDEN: 'FGARDEN', HIENLUONG: 'HIENLUONG', HINODE: 'HINODE', JAPAUS: 'JAPAUS', SAKUKO: 'SAKUKO', SIBA: 'SIBA', ANHVIET: 'ANHVIET', CLEVER: 'CLEVERFOOD', FMKT: 'FMKTHNI', KAISER: 'CVS0', OHMEE: 'OHMEE', RFOOD: 'RFOODTP', TOP5: 'TOP5_MART', WEFRESH: 'WEFRESH', KPLAZA: 'KPLAZA', KOREAN: 'KOREAN', LMLUONG: 'LMLG', TATAMART: 'TATAMAT' };
   const LABEL = { dmkh: 'DMKH', dmsp: 'DMSP', map: 'Code chuyển đổi', tpl: 'Form final' };

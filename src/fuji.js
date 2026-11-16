@@ -229,23 +229,37 @@
     const p = g.getImageData(0, 0, W, H).data, dark = new Uint8Array(W * H);
     for (let i = 0, j = 0; i < p.length; i += 4, j++) dark[j] = (p[i] * 0.299 + p[i + 1] * 0.587 + p[i + 2] * 0.114) < 150 ? 1 : 0;
     // dòng kẻ ngang: chuỗi điểm tối liên tục dài nhất trên mỗi hàng
-    const runRow = y => { let best = 0, cur = 0, s0 = 0, bs = 0; for (let x = 0; x < W; x++) { if (dark[y * W + x]) { if (!cur) s0 = x; cur++; if (cur > best) { best = cur; bs = s0; } } else cur = 0; } return { len: best, x0: bs, x1: bs + best }; };
+    // bản scan hơi nghiêng: đường kẻ ngang lệch vài px qua bề ngang bảng -> xét dải ±2 dòng (B) khi tìm đoạn tối liền mạch
+    const B = 2, isD = (x, y) => { for (let k = -B; k <= B; k++) { const yy = y + k; if (yy >= 0 && yy < H && dark[yy * W + x]) return 1; } return 0; };
+    const runRow = y => { let best = 0, cur = 0, s0 = 0, bs = 0; for (let x = 0; x < W; x++) { if (isD(x, y)) { if (!cur) s0 = x; cur++; if (cur > best) { best = cur; bs = s0; } } else cur = 0; } return { len: best, x0: bs, x1: bs + best }; };
     const hl = [];
     for (let y = 0; y < H; y++) { const r = runRow(y); if (r.len > W * 0.5) hl.push({ y, x0: r.x0, x1: r.x1 }); }
     const group = (arr, key) => { const out = []; for (const v of arr) { const last = out[out.length - 1]; if (last && v[key] - last.end <= 3) { last.end = v[key]; last.items.push(v); } else out.push({ start: v[key], end: v[key], items: [v] }); } return out.map(o => Object.assign({ c: (o.start + o.end) / 2 }, o)); };
-    const hLines = group(hl, 'y');
+    let hLines = group(hl, 'y');
     if (hLines.length < 3) return null;
+    // chỉ giữ cụm đường kẻ của bảng hàng: bỏ các đường ngang rời xa bảng (gạch chân chữ ký, viền trang scan…)
+    if (hLines.length > 3) {
+      const gaps = hLines.slice(1).map((l, i) => l.c - hLines[i].c), mg = med(gaps);
+      const seqs = []; let cur = [hLines[0]];
+      for (let i = 1; i < hLines.length; i++) { if (gaps[i - 1] <= mg * 3) cur.push(hLines[i]); else { seqs.push(cur); cur = [hLines[i]]; } }
+      seqs.push(cur);
+      hLines = seqs.sort((a, b) => b.length - a.length)[0];
+      if (hLines.length < 3) return null;
+    }
     // chọn cụm đường kẻ ngang cách đều nhau nhiều nhất (thân bảng)
     const tx0 = med(hLines.map(l => l.items[0].x0)), tx1 = med(hLines.map(l => l.items[0].x1));
     const top = hLines[0].c, bot = hLines[hLines.length - 1].c;
     const vl = [];
     for (let x = Math.max(0, Math.round(tx0) - 3); x <= Math.min(W - 1, Math.round(tx1) + 3); x++) {
-      let n = 0; for (let y = Math.round(top); y <= Math.round(bot); y++) n += dark[y * W + x];
+      let n = 0; for (let y = Math.round(top); y <= Math.round(bot); y++) { let d = 0; for (let k = -B; k <= B && !d; k++) { const xx = x + k; if (xx >= 0 && xx < W) d = dark[y * W + xx]; } n += d; }
       if (n > (bot - top) * 0.6) vl.push({ x });
     }
     const vLines = group(vl, 'x');
     if (vLines.length < 4) return null;
-    return { rows: hLines.map(l => l.c), cols: vLines.map(l => l.c) };
+    const cols = vLines.map(l => l.c);
+    // bản scan bị cắt mép phải: không thấy viền phải của cột cuối -> lấy mép phải đường kẻ ngang làm viền
+    if (tx1 - cols[cols.length - 1] > 40) cols.push(W - 1);
+    return { rows: hLines.map(l => l.c), cols };
   }
   async function readBox(worker, src, box, whitelist, psm) {
     await worker.setParameters({ tessedit_char_whitelist: whitelist || '', tessedit_pageseg_mode: psm || '7' });
@@ -253,6 +267,26 @@
     return (data.text || '').replace(/\s+/g, ' ').trim();
   }
 
+  // PDF scan (CamScanner…): không có lớp chữ -> vẽ từng trang thành ảnh PNG để nhận dạng như ảnh chụp
+  async function pdfHasText(buf) {
+    const doc = await root.pdfjsLib.getDocument({ data: new Uint8Array(buf).slice(), isEvalSupported: false }).promise;
+    let n = 0;
+    for (let p = 1; p <= doc.numPages; p++) n += (await (await doc.getPage(p)).getTextContent()).items.filter(it => (it.str || '').trim()).length;
+    return n >= 20;
+  }
+  async function pdfPageImages(buf, targetW) {
+    const doc = await root.pdfjsLib.getDocument({ data: new Uint8Array(buf).slice(), isEvalSupported: false }).promise;
+    const out = [];
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p), v1 = page.getViewport({ scale: 1 });
+      const vp = page.getViewport({ scale: (targetW || 2200) / v1.width });
+      const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+      await page.render({ canvasContext: g, viewport: vp }).promise;
+      out.push(await new Promise(ok => c.toBlob(ok, 'image/png')));
+    }
+    return out;
+  }
   async function imageParse(blob, onProgress, tessOpts) {
     const img = await loadImage(blob);
     const k = Math.max(1, 1600 / img.naturalWidth), src = document.createElement('canvas');
@@ -267,15 +301,22 @@
     const res = parseWords(words);
     delete res.error; res.rows = [];
     // ảnh mờ: đọc lại góc trên bên phải (Số Đơn, Ngày đặt) ở độ phóng lớn hơn
-    if (!res.po || !res.orderDate) {
+    {
+      // đọc nhiều kiểu xử lý ảnh rồi bỏ phiếu (kể cả lần đọc cả trang): số nào xuất hiện nhiều nhất thì lấy; các lần đọc khác nhau -> báo chưa chắc
       const box = { x0: img.naturalWidth * 0.55, x1: img.naturalWidth, y0: 0, y1: img.naturalHeight * 0.2 };
-      for (const v of [{ s: 4, m: 'gray' }, { s: 3, m: 'otsu' }]) {
+      const pos = res.po ? [res.po] : [], dates = res.orderDate ? [res.orderDate] : [];
+      for (const v of [{ s: 4, m: 'gray' }, { s: 3, m: 'otsu' }, { s: 5, m: 'gray' }, { s: 2, m: 'otsu' }]) {
         await worker.setParameters({ tessedit_char_whitelist: '', tessedit_pageseg_mode: '6' });
         const t = ((await worker.recognize(cropCanvas(img, box, v.s, v.m))).data.text || '');
-        if (!res.po) { const m = t.replace(/[ \t]/g, '').match(/\d{18}/); if (m) res.po = m[0]; }
-        if (!res.orderDate) { const ln = t.split('\n').find(x => /ng[aà]y\s*[dđ][aặ]t/i.test(x)) || ''; const m = ln.match(/(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(20\d\d)/); if (m) res.orderDate = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
-        if (res.po && res.orderDate) break;
+        const mp = t.replace(/[ \t]/g, '').match(/\d{18}/); if (mp) pos.push(mp[0]);
+        const ln = t.split('\n').find(x => /ng[aà]y\s*[dđ][aặ]t/i.test(x)) || ''; const md = ln.match(/(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(20\d\d)/); if (md) dates.push(`${md[3]}-${md[2].padStart(2, '0')}-${md[1].padStart(2, '0')}`);
+        const top = a => { const c = {}; a.forEach(x => c[x] = (c[x] || 0) + 1); return Object.entries(c).sort((x, y) => y[1] - x[1])[0] || [null, 0]; };
+        if (top(pos)[1] >= 2 && top(dates)[1] >= 2) break;
       }
+      const vote = a => { const c = {}; a.forEach(x => c[x] = (c[x] || 0) + 1); const e = Object.entries(c).sort((x, y) => y[1] - x[1]); return e.length ? { v: e[0][0], sure: e[0][1] >= 2 && (e.length === 1 || e[1][1] < e[0][1]) } : null; };
+      const vp = vote(pos), vd = vote(dates);
+      if (vp) { res.po = vp.v; res.poUnsure = !vp.sure; }
+      if (vd) { res.orderDate = vd.v; res.dateUnsure = !vd.sure; }
     }
     const grid = findGrid(src);
     if (!grid) { res.error = 'Không tìm thấy bảng hàng (đường kẻ bảng) trong ảnh. Ảnh có bị mờ, nghiêng hay cắt mất bảng không?'; return res; }
@@ -466,6 +507,6 @@
   }
 
   root.__lastAeonItems = null;
-  const api = { pdfItems, kktcImageParse, parseKktcTokens, aeonPdfParse, snapCatalog, pickBarcode, parseQty, gtinOk, parseNum, parseWords, pdfWords, imageParse, fold };
+  const api = { pdfHasText, pdfPageImages, pdfItems, kktcImageParse, parseKktcTokens, aeonPdfParse, snapCatalog, pickBarcode, parseQty, gtinOk, parseNum, parseWords, pdfWords, imageParse, fold };
   if (typeof module !== 'undefined') module.exports = api; else root.FUJI = api;
 })(typeof window !== 'undefined' ? window : globalThis);
