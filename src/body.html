@@ -235,6 +235,7 @@
     <div id="chatList" class="chat-list"></div>
     <p id="chatState" class="chat-state"></p>
     <div class="chat-who" id="chatWhoBox" hidden><input type="text" id="chatWho" placeholder="Tên bạn (để nhắn tin)" autocomplete="name"></div>
-    <div class="chat-f"><textarea id="chatIn" rows="2" maxlength="1000" placeholder="Nhắn cho team… (Enter để gửi)"></textarea><button type="button" id="chatSend" class="primary">Gửi</button></div>
+    <div id="chatFiles" class="chat-files" hidden></div>
+    <div class="chat-f"><button type="button" id="chatAtt" class="chat-att" title="Đính kèm file (PDF, Excel, Word, ảnh)" aria-label="Đính kèm file" hidden>📎</button><input type="file" id="chatFile" multiple hidden accept=".pdf,.xlsx,.xls,.xlsm,.csv,.doc,.docx,.txt,image/*"><textarea id="chatIn" rows="2" maxlength="1000" placeholder="Nhắn cho team… (Enter để gửi)"></textarea><button type="button" id="chatSend" class="primary">Gửi</button></div>
     <p class="chat-note">Ai có link web đều đọc được, không nhắn thông tin nhạy cảm.</p>
   </section>

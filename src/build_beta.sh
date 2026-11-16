@@ -5,7 +5,7 @@ src=open('ffm-chuyen-don.html').read()
 sec=open('ghd_section.html').read()
 assert '<!--BETA_GHD-->' in src
 b=src.replace('<!--BETA_GHD-->',sec,1)
-b=b.replace('<title>','<meta name="robots" content="noindex"><script>window.FFM_DATA_BASE="../data/"</script><title>',1)
+b=b.replace('<title>','<meta name="robots" content="noindex"><script>window.FFM_DATA_BASE="../data/";window.FFM_CHAT_ATTACH=true</script><title>',1)
 b=b.replace('</title>',' · BẢN THỬ</title>',1)
 i=b.rindex('</body>') if '</body>' in b else len(b)
 b=b[:i]+'<script>'+open('ghd.js').read()+'</script>'+b[i:]
