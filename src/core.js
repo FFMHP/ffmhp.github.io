@@ -841,20 +841,21 @@
     const F = root.FUJI, isPdf = /\.pdf$/i.test(f.name), issues = [];
     try { if (isPdf) await libs.pdf(); await libs.ocr(); } catch (e) { return { error: 'Không tải được bộ đọc PDF / nhận dạng chữ (cần internet).' }; }
     const conv = (root.FFM_CONV && root.FFM_CONV.SATRA) || SATRA_CONV;
-    const opts = { skipHeaderVote: true, qtyDec3: true, extraCat: Object.keys(conv), grid: { fullWidth: true, minRowH: 20 }, relHeads: true };
+    const opts = { skipHeaderVote: true, qtyDec3: true, extraCat: Object.keys(conv), grid: { fullWidth: true, minRowH: 20 }, relHeads: true, deskew: true, headMode: 'otsu', totalRow: true };
     let imgs;
     if (isPdf) {
       if (await F.pdfHasText(f.buf)) return { error: 'File PDF này có chữ (không phải bản scan). Gửi anh Tài file mẫu để làm thêm cách đọc PDF chữ cho SATRA.' };
       onProgress && onProgress('PDF là bản scan, đang chuyển thành ảnh để đọc…');
       imgs = await F.pdfPageImages(f.buf);
     } else imgs = [new Blob([f.buf])];
-    let rows = [], text = '';
+    let rows = [], text = '', totQ = null;
     for (let i = 0; i < imgs.length; i++) {
       let r;
       try { r = await F.imageParse(imgs[i], m => onProgress && onProgress(`Trang ${i + 1}/${imgs.length}: ${m}`), libs.tessOpts, opts); }
       catch (e) { return { error: 'Không đọc được phiếu: ' + (e && e.message || e) }; }
       text += '\n' + (r.text || '');
       if (r.rows) rows = rows.concat(r.rows);
+      if (r.totalQty != null) totQ = (totQ || 0) + r.totalQty;
     }
     if (!rows.length) return { error: 'Không đọc được dòng hàng nào trên phiếu SATRA. Ảnh có bị mờ, nghiêng hay cắt mất bảng không?' };
     const T = text.replace(/[|]/g, ' ');
@@ -874,8 +875,13 @@
     const addr = bi >= 0 ? lines.slice(bi + 1, bi + 3).filter(l => /[dđ][iị]a\s*ch[iỉ]/i.test(l)).join(' ') : '';
     const isFood = /satra\s*food/i.test(buyer);
     const pool = acct.customers.filter(c => isFood ? /^STFD/i.test(c.code) : !/^STFD/i.test(c.code));
-    let m = matchAddr(pool, buyer, acct.brandWords);
+    // "Mã số" (MST chi nhánh) in trên phiếu -> mã KH (theo DMKH cột Mã số thuế). Satrafoods (-025) nhiều cửa hàng chung 1 MST -> vẫn dò theo tên/địa chỉ
+    const SATRA_MST = { '004': 'SATRA002', '020': 'SATRA001', '027': 'SATRA004', '028': 'SATRA010' };
+    const mMst = T.replace(/[oO]/g, '0').match(/0300100037\s*[-–—.]?\s*(\d{3})\b/);
+    const byMst = mMst && SATRA_MST[mMst[1]] ? pool.find(c => c.code === SATRA_MST[mMst[1]]) : null;
+    let m = byMst ? { hit: byMst, exact: true } : matchAddr(pool, buyer, acct.brandWords);
     if (!m.hit && addr) m = matchAddr(pool, buyer + ' ' + addr, acct.brandWords);
+    if (byMst) issues.push({ level: 'info', msg: `Mã KH ${byMst.code} lấy theo Mã số ${'0300100037-' + mMst[1]} trên phiếu.` });
     const customer = m.hit ? m.hit.code : '';
     if (!m.hit) issues.push({ key: 'customer', level: 'err', msg: `Không dò được cửa hàng "${buyer || '?'}" trong DMKH. Chọn ở ô Mã khách hàng.` });
     else if (!m.exact) issues.push({ key: 'customer', level: 'warn', msg: `Khớp gần đúng: "${buyer}" → ${m.hit.code} · ${m.hit.name}. Kiểm tra lại.` });
@@ -885,7 +891,7 @@
     const tl = lines.find(l => /t[oổ]ng\s*c[oộ]ng/i.test(l)) || '';
     const mq = tl.match(/(\d{1,3}(?:[.,]\d{3})*)[.,](\d{3})\b/);
     const sumQ = out.reduce((a, l) => a + (l.qty || 0), 0);
-    if (mq) { const tq = Number(mq[1].replace(/[.,]/g, '')); issues.push(tq === sumQ ? { level: 'info', msg: `Tổng SL ${sumQ} khớp dòng Tổng cộng trên phiếu.` } : { level: 'warn', msg: `Tổng SL các dòng (${sumQ}) khác dòng Tổng cộng trên phiếu (${tq}). Có thể thiếu dòng hoặc đọc sai SL.` }); }
+    if (mq || totQ != null) { const tq = totQ != null ? totQ : Number(mq[1].replace(/[.,]/g, '')); issues.push(tq === sumQ ? { level: 'info', msg: `Tổng SL ${sumQ} khớp dòng Tổng cộng trên phiếu.` } : { level: 'warn', msg: `Tổng SL các dòng (${sumQ}) khác dòng Tổng cộng trên phiếu (${tq}). Có thể thiếu dòng hoặc đọc sai SL.` }); }
     issues.push({ level: 'info', msg: `Đọc từ ${isPdf ? 'PDF scan' : 'ảnh'}: ${out.length} dòng. Ô đỏ là đọc nhầm: sửa trực tiếp trong bảng theo phiếu.` });
     return { fixedPo: true, po, customer, store: buyer, lines: out, issues, editable: true, source: 'image' };
   }

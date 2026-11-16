@@ -266,9 +266,9 @@
     if (!o.fullWidth && tx1 - cols[cols.length - 1] > 40) cols.push(W - 1);
     return { rows: hLines.map(l => l.c), cols };
   }
-  async function readBox(worker, src, box, whitelist, psm) {
+  async function readBox(worker, src, box, whitelist, psm, mode) {
     await worker.setParameters({ tessedit_char_whitelist: whitelist || '', tessedit_pageseg_mode: psm || '7' });
-    const { data } = await worker.recognize(cropCanvas(src, box, 3));
+    const { data } = await worker.recognize(cropCanvas(src, box, 3, mode));
     return (data.text || '').replace(/\s+/g, ' ').trim();
   }
 
@@ -292,9 +292,30 @@
     }
     return out;
   }
+  // o.deskew (SATRA): bản scan bị xoay lệch vài độ -> tìm góc làm các dòng chữ/đường kẻ thẳng nhất rồi xoay lại
+  function deskewAngle(img) {
+    const sw = 900, k = sw / img.naturalWidth, sh = Math.round(img.naturalHeight * k);
+    const c = document.createElement('canvas'); c.width = sw; c.height = sh;
+    const g = c.getContext('2d', { willReadFrequently: true }); g.fillStyle = '#fff'; g.fillRect(0, 0, sw, sh); g.drawImage(img, 0, 0, sw, sh);
+    const p = g.getImageData(0, 0, sw, sh).data, xs = [], ys = [];
+    for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) { const i = (y * sw + x) * 4; if (p[i] * 0.299 + p[i + 1] * 0.587 + p[i + 2] * 0.114 < 110) { xs.push(x - sw / 2); ys.push(y); } }
+    if (xs.length < 500) return 0;
+    const score = a => { const t = Math.tan(a * Math.PI / 180), h = new Float64Array(sh * 2 + 10); for (let i = 0; i < xs.length; i++) { const b = Math.round(ys[i] - xs[i] * t) + sh / 2; if (b >= 0 && b < h.length) h[b]++; } let s = 0; for (let i = 0; i < h.length; i++) s += h[i] * h[i]; return s; };
+    let best = 0, bs = score(0);
+    for (let a = -4; a <= 4.001; a += 0.25) { const v = score(a); if (v > bs) { bs = v; best = a; } }
+    for (let a = best - 0.2; a <= best + 0.201; a += 0.05) { const v = score(a); if (v > bs) { bs = v; best = a; } }
+    return Math.round(best * 100) / 100;
+  }
+  function rotated(img, deg) {
+    const w = img.naturalWidth, h = img.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h;
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h);
+    g.translate(w / 2, h / 2); g.rotate(-deg * Math.PI / 180); g.imageSmoothingQuality = 'high'; g.drawImage(img, -w / 2, -h / 2);
+    c.naturalWidth = w; c.naturalHeight = h; return c;
+  }
   async function imageParse(blob, onProgress, tessOpts, opts) {
     opts = opts || {};
-    const img = await loadImage(blob);
+    let img = await loadImage(blob);
+    if (opts.deskew) { const a = deskewAngle(img); if (Math.abs(a) >= 0.15) img = rotated(img, a); }
     const k = Math.max(1, 1600 / img.naturalWidth), src = document.createElement('canvas');
     src.width = Math.round(img.naturalWidth * k); src.height = Math.round(img.naturalHeight * k);
     { const g = src.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, src.width, src.height); g.imageSmoothingQuality = 'high'; g.drawImage(img, 0, 0, src.width, src.height); }
@@ -329,7 +350,8 @@
     const inset = 4, cell = (ri, ci) => ({ x0: grid.cols[ci] + inset, x1: grid.cols[ci + 1] - inset, y0: grid.rows[ri] + inset, y1: grid.rows[ri + 1] - inset });
     // dòng tiêu đề: đọc chữ để biết cột nào là Mã vạch / Theo đơn / Đơn giá / Thành tiền
     const nC = grid.cols.length - 1, heads = [];
-    for (let ci = 0; ci < nC; ci++) heads.push(fold(await readBox(worker, src, cell(0, ci), '', '6')));
+    // opts.headMode (SATRA): dòng tiêu đề tô nền xám -> ngưỡng cố định biến nền thành đen, đọc theo ngưỡng tự động (otsu)
+    for (let ci = 0; ci < nC; ci++) heads.push(fold(await readBox(worker, src, cell(0, ci), '', '6', opts.headMode)));
     const find = re => heads.findIndex(h => re.test(h));
     const col = { bc: find(/vach|barcode/), qty: find(/theo|so\s*luong/), price: find(/don\s*gia|gia/), amt: find(/thanh\s*tien|tien/) };
     // opts.relHeads (SATRA): dòng tiêu đề tô xám hay đọc sót chữ -> suy cột theo cột bên cạnh (Barcode sau Mã hàng, Đơn giá trước Thành tiền)
@@ -338,6 +360,9 @@
       if (col.amt < 0) col.amt = find(/thanh/);
       if (col.price < 0 && col.amt > 0) col.price = col.amt - 1;
       if (col.qty < 0 && col.price > 0) col.qty = col.price - 1;
+      // vẫn không biết cột Barcode: đọc thử dòng hàng đầu tiên, cột nào ra mã vạch 13 số hợp lệ thì lấy cột đó
+      if (col.bc < 0) for (let ci = 0; ci < nC && col.bc < 0; ci++) { const b = { x0: (grid.cols[ci] + inset) / k, x1: (grid.cols[ci + 1] - inset) / k, y0: (grid.rows[1] + inset) / k, y1: (grid.rows[2] - inset) / k }; const d = digits(await readVar(worker, img, b, '0123456789', BC_VARIANTS[0])); if (d.length >= 12 && d.length <= 14 && gtinOk(d)) col.bc = ci; }
+      if (col.bc >= 0 && col.qty < 0 && col.price < 0) { col.qty = col.bc + 3; col.price = col.bc + 4; col.amt = col.bc + 5; }
     }
     if (col.bc < 0) col.bc = 3; if (col.qty < 0) col.qty = col.bc + 2; if (col.price < 0) col.price = nC - 2; if (col.amt < 0) col.amt = nC - 1;
     res.headers = heads;
@@ -368,6 +393,12 @@
       let preview = '';
       try { preview = cropCanvas(img, strip, Math.min(3, Math.max(1, 28 / Math.max(1, strip.y1 - strip.y0))), 'none').toDataURL('image/jpeg', 0.85); } catch (e) {}
       res.rows.push({ reads, barcode: pk.code, bcSnapped: snapped, bcGuessed: !!pk.guessed && !snapped, bcSure: !!pk.sure, qty: q, price: p, amount: a, verified, preview });
+    }
+    // opts.totalRow (SATRA): dòng cuối bảng là "Tổng cộng" -> đọc ô SL để so với tổng các dòng (phát hiện đọc sót dòng)
+    if (opts.totalRow && res.rows.length && grid.rows.length >= 3 && col.qty >= 0) {
+      const ri = grid.rows.length - 2, tq = [];
+      for (const v of NUM_VARIANTS) { const t = String(await readVar(worker, img, toOrig(cell(ri, col.qty)), '0123456789.,', v)).replace(/[^\d.,]/g, ''); const x = /^\d+[.,]\d{3}$/.test(t) ? Number(t.replace(/[.,]\d{3}$/, '')) : null; if (x != null) tq.push(x); if (tq.length >= 2 && tq[0] === tq[1]) break; }
+      if (tq.length) { const c = {}; tq.forEach(x => c[x] = (c[x] || 0) + 1); res.totalQty = +Object.keys(c).sort((a, b) => c[b] - c[a])[0]; }
     }
     if (!res.rows.length) res.error = 'Không đọc được dòng hàng nào trong bảng.';
     return res;

@@ -548,7 +548,7 @@ button.danger{color:var(--err);border-color:var(--err)}
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 16/11/2026 · v61</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 16/11/2026 · v62</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
@@ -842,9 +842,9 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
     if (!o.fullWidth && tx1 - cols[cols.length - 1] > 40) cols.push(W - 1);
     return { rows: hLines.map(l => l.c), cols };
   }
-  async function readBox(worker, src, box, whitelist, psm) {
+  async function readBox(worker, src, box, whitelist, psm, mode) {
     await worker.setParameters({ tessedit_char_whitelist: whitelist || '', tessedit_pageseg_mode: psm || '7' });
-    const { data } = await worker.recognize(cropCanvas(src, box, 3));
+    const { data } = await worker.recognize(cropCanvas(src, box, 3, mode));
     return (data.text || '').replace(/\s+/g, ' ').trim();
   }
 
@@ -868,9 +868,30 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
     }
     return out;
   }
+  // o.deskew (SATRA): bản scan bị xoay lệch vài độ -> tìm góc làm các dòng chữ/đường kẻ thẳng nhất rồi xoay lại
+  function deskewAngle(img) {
+    const sw = 900, k = sw / img.naturalWidth, sh = Math.round(img.naturalHeight * k);
+    const c = document.createElement('canvas'); c.width = sw; c.height = sh;
+    const g = c.getContext('2d', { willReadFrequently: true }); g.fillStyle = '#fff'; g.fillRect(0, 0, sw, sh); g.drawImage(img, 0, 0, sw, sh);
+    const p = g.getImageData(0, 0, sw, sh).data, xs = [], ys = [];
+    for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) { const i = (y * sw + x) * 4; if (p[i] * 0.299 + p[i + 1] * 0.587 + p[i + 2] * 0.114 < 110) { xs.push(x - sw / 2); ys.push(y); } }
+    if (xs.length < 500) return 0;
+    const score = a => { const t = Math.tan(a * Math.PI / 180), h = new Float64Array(sh * 2 + 10); for (let i = 0; i < xs.length; i++) { const b = Math.round(ys[i] - xs[i] * t) + sh / 2; if (b >= 0 && b < h.length) h[b]++; } let s = 0; for (let i = 0; i < h.length; i++) s += h[i] * h[i]; return s; };
+    let best = 0, bs = score(0);
+    for (let a = -4; a <= 4.001; a += 0.25) { const v = score(a); if (v > bs) { bs = v; best = a; } }
+    for (let a = best - 0.2; a <= best + 0.201; a += 0.05) { const v = score(a); if (v > bs) { bs = v; best = a; } }
+    return Math.round(best * 100) / 100;
+  }
+  function rotated(img, deg) {
+    const w = img.naturalWidth, h = img.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h;
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h);
+    g.translate(w / 2, h / 2); g.rotate(-deg * Math.PI / 180); g.imageSmoothingQuality = 'high'; g.drawImage(img, -w / 2, -h / 2);
+    c.naturalWidth = w; c.naturalHeight = h; return c;
+  }
   async function imageParse(blob, onProgress, tessOpts, opts) {
     opts = opts || {};
-    const img = await loadImage(blob);
+    let img = await loadImage(blob);
+    if (opts.deskew) { const a = deskewAngle(img); if (Math.abs(a) >= 0.15) img = rotated(img, a); }
     const k = Math.max(1, 1600 / img.naturalWidth), src = document.createElement('canvas');
     src.width = Math.round(img.naturalWidth * k); src.height = Math.round(img.naturalHeight * k);
     { const g = src.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, src.width, src.height); g.imageSmoothingQuality = 'high'; g.drawImage(img, 0, 0, src.width, src.height); }
@@ -905,7 +926,8 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
     const inset = 4, cell = (ri, ci) => ({ x0: grid.cols[ci] + inset, x1: grid.cols[ci + 1] - inset, y0: grid.rows[ri] + inset, y1: grid.rows[ri + 1] - inset });
     // dòng tiêu đề: đọc chữ để biết cột nào là Mã vạch / Theo đơn / Đơn giá / Thành tiền
     const nC = grid.cols.length - 1, heads = [];
-    for (let ci = 0; ci < nC; ci++) heads.push(fold(await readBox(worker, src, cell(0, ci), '', '6')));
+    // opts.headMode (SATRA): dòng tiêu đề tô nền xám -> ngưỡng cố định biến nền thành đen, đọc theo ngưỡng tự động (otsu)
+    for (let ci = 0; ci < nC; ci++) heads.push(fold(await readBox(worker, src, cell(0, ci), '', '6', opts.headMode)));
     const find = re => heads.findIndex(h => re.test(h));
     const col = { bc: find(/vach|barcode/), qty: find(/theo|so\s*luong/), price: find(/don\s*gia|gia/), amt: find(/thanh\s*tien|tien/) };
     // opts.relHeads (SATRA): dòng tiêu đề tô xám hay đọc sót chữ -> suy cột theo cột bên cạnh (Barcode sau Mã hàng, Đơn giá trước Thành tiền)
@@ -914,6 +936,9 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
       if (col.amt < 0) col.amt = find(/thanh/);
       if (col.price < 0 && col.amt > 0) col.price = col.amt - 1;
       if (col.qty < 0 && col.price > 0) col.qty = col.price - 1;
+      // vẫn không biết cột Barcode: đọc thử dòng hàng đầu tiên, cột nào ra mã vạch 13 số hợp lệ thì lấy cột đó
+      if (col.bc < 0) for (let ci = 0; ci < nC && col.bc < 0; ci++) { const b = { x0: (grid.cols[ci] + inset) / k, x1: (grid.cols[ci + 1] - inset) / k, y0: (grid.rows[1] + inset) / k, y1: (grid.rows[2] - inset) / k }; const d = digits(await readVar(worker, img, b, '0123456789', BC_VARIANTS[0])); if (d.length >= 12 && d.length <= 14 && gtinOk(d)) col.bc = ci; }
+      if (col.bc >= 0 && col.qty < 0 && col.price < 0) { col.qty = col.bc + 3; col.price = col.bc + 4; col.amt = col.bc + 5; }
     }
     if (col.bc < 0) col.bc = 3; if (col.qty < 0) col.qty = col.bc + 2; if (col.price < 0) col.price = nC - 2; if (col.amt < 0) col.amt = nC - 1;
     res.headers = heads;
@@ -944,6 +969,12 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
       let preview = '';
       try { preview = cropCanvas(img, strip, Math.min(3, Math.max(1, 28 / Math.max(1, strip.y1 - strip.y0))), 'none').toDataURL('image/jpeg', 0.85); } catch (e) {}
       res.rows.push({ reads, barcode: pk.code, bcSnapped: snapped, bcGuessed: !!pk.guessed && !snapped, bcSure: !!pk.sure, qty: q, price: p, amount: a, verified, preview });
+    }
+    // opts.totalRow (SATRA): dòng cuối bảng là "Tổng cộng" -> đọc ô SL để so với tổng các dòng (phát hiện đọc sót dòng)
+    if (opts.totalRow && res.rows.length && grid.rows.length >= 3 && col.qty >= 0) {
+      const ri = grid.rows.length - 2, tq = [];
+      for (const v of NUM_VARIANTS) { const t = String(await readVar(worker, img, toOrig(cell(ri, col.qty)), '0123456789.,', v)).replace(/[^\d.,]/g, ''); const x = /^\d+[.,]\d{3}$/.test(t) ? Number(t.replace(/[.,]\d{3}$/, '')) : null; if (x != null) tq.push(x); if (tq.length >= 2 && tq[0] === tq[1]) break; }
+      if (tq.length) { const c = {}; tq.forEach(x => c[x] = (c[x] || 0) + 1); res.totalQty = +Object.keys(c).sort((a, b) => c[b] - c[a])[0]; }
     }
     if (!res.rows.length) res.error = 'Không đọc được dòng hàng nào trong bảng.';
     return res;
@@ -1944,20 +1975,21 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
     const F = root.FUJI, isPdf = /\.pdf$/i.test(f.name), issues = [];
     try { if (isPdf) await libs.pdf(); await libs.ocr(); } catch (e) { return { error: 'Không tải được bộ đọc PDF / nhận dạng chữ (cần internet).' }; }
     const conv = (root.FFM_CONV && root.FFM_CONV.SATRA) || SATRA_CONV;
-    const opts = { skipHeaderVote: true, qtyDec3: true, extraCat: Object.keys(conv), grid: { fullWidth: true, minRowH: 20 }, relHeads: true };
+    const opts = { skipHeaderVote: true, qtyDec3: true, extraCat: Object.keys(conv), grid: { fullWidth: true, minRowH: 20 }, relHeads: true, deskew: true, headMode: 'otsu', totalRow: true };
     let imgs;
     if (isPdf) {
       if (await F.pdfHasText(f.buf)) return { error: 'File PDF này có chữ (không phải bản scan). Gửi anh Tài file mẫu để làm thêm cách đọc PDF chữ cho SATRA.' };
       onProgress && onProgress('PDF là bản scan, đang chuyển thành ảnh để đọc…');
       imgs = await F.pdfPageImages(f.buf);
     } else imgs = [new Blob([f.buf])];
-    let rows = [], text = '';
+    let rows = [], text = '', totQ = null;
     for (let i = 0; i < imgs.length; i++) {
       let r;
       try { r = await F.imageParse(imgs[i], m => onProgress && onProgress(`Trang ${i + 1}/${imgs.length}: ${m}`), libs.tessOpts, opts); }
       catch (e) { return { error: 'Không đọc được phiếu: ' + (e && e.message || e) }; }
       text += '\n' + (r.text || '');
       if (r.rows) rows = rows.concat(r.rows);
+      if (r.totalQty != null) totQ = (totQ || 0) + r.totalQty;
     }
     if (!rows.length) return { error: 'Không đọc được dòng hàng nào trên phiếu SATRA. Ảnh có bị mờ, nghiêng hay cắt mất bảng không?' };
     const T = text.replace(/[|]/g, ' ');
@@ -1977,8 +2009,13 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
     const addr = bi >= 0 ? lines.slice(bi + 1, bi + 3).filter(l => /[dđ][iị]a\s*ch[iỉ]/i.test(l)).join(' ') : '';
     const isFood = /satra\s*food/i.test(buyer);
     const pool = acct.customers.filter(c => isFood ? /^STFD/i.test(c.code) : !/^STFD/i.test(c.code));
-    let m = matchAddr(pool, buyer, acct.brandWords);
+    // "Mã số" (MST chi nhánh) in trên phiếu -> mã KH (theo DMKH cột Mã số thuế). Satrafoods (-025) nhiều cửa hàng chung 1 MST -> vẫn dò theo tên/địa chỉ
+    const SATRA_MST = { '004': 'SATRA002', '020': 'SATRA001', '027': 'SATRA004', '028': 'SATRA010' };
+    const mMst = T.replace(/[oO]/g, '0').match(/0300100037\s*[-–—.]?\s*(\d{3})\b/);
+    const byMst = mMst && SATRA_MST[mMst[1]] ? pool.find(c => c.code === SATRA_MST[mMst[1]]) : null;
+    let m = byMst ? { hit: byMst, exact: true } : matchAddr(pool, buyer, acct.brandWords);
     if (!m.hit && addr) m = matchAddr(pool, buyer + ' ' + addr, acct.brandWords);
+    if (byMst) issues.push({ level: 'info', msg: `Mã KH ${byMst.code} lấy theo Mã số ${'0300100037-' + mMst[1]} trên phiếu.` });
     const customer = m.hit ? m.hit.code : '';
     if (!m.hit) issues.push({ key: 'customer', level: 'err', msg: `Không dò được cửa hàng "${buyer || '?'}" trong DMKH. Chọn ở ô Mã khách hàng.` });
     else if (!m.exact) issues.push({ key: 'customer', level: 'warn', msg: `Khớp gần đúng: "${buyer}" → ${m.hit.code} · ${m.hit.name}. Kiểm tra lại.` });
@@ -1988,7 +2025,7 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
     const tl = lines.find(l => /t[oổ]ng\s*c[oộ]ng/i.test(l)) || '';
     const mq = tl.match(/(\d{1,3}(?:[.,]\d{3})*)[.,](\d{3})\b/);
     const sumQ = out.reduce((a, l) => a + (l.qty || 0), 0);
-    if (mq) { const tq = Number(mq[1].replace(/[.,]/g, '')); issues.push(tq === sumQ ? { level: 'info', msg: `Tổng SL ${sumQ} khớp dòng Tổng cộng trên phiếu.` } : { level: 'warn', msg: `Tổng SL các dòng (${sumQ}) khác dòng Tổng cộng trên phiếu (${tq}). Có thể thiếu dòng hoặc đọc sai SL.` }); }
+    if (mq || totQ != null) { const tq = totQ != null ? totQ : Number(mq[1].replace(/[.,]/g, '')); issues.push(tq === sumQ ? { level: 'info', msg: `Tổng SL ${sumQ} khớp dòng Tổng cộng trên phiếu.` } : { level: 'warn', msg: `Tổng SL các dòng (${sumQ}) khác dòng Tổng cộng trên phiếu (${tq}). Có thể thiếu dòng hoặc đọc sai SL.` }); }
     issues.push({ level: 'info', msg: `Đọc từ ${isPdf ? 'PDF scan' : 'ảnh'}: ${out.length} dòng. Ô đỏ là đọc nhầm: sửa trực tiếp trong bảng theo phiếu.` });
     return { fixedPo: true, po, customer, store: buyer, lines: out, issues, editable: true, source: 'image' };
   }
