@@ -522,7 +522,7 @@ button.danger{color:var(--err);border-color:var(--err)}
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v57</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v58</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
@@ -1450,14 +1450,19 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
     for (const a in ws) { if (a[0] === '!') continue; const m = String(ws[a].v == null ? '' : ws[a].v).match(re); if (m) return m[1].toUpperCase(); }
     return '';
   }
-  // mã ghi sẵn trên file (cột "Mã khách hàng" hoặc ghi tay) có trong DMKH -> lấy luôn mã đó (góp ý của Tiến 16/11)
+  // writtenCode (chỉ Fresh Garden, góp ý của Tiến 16/11): mã ghi trên file có trong DMKH -> lấy luôn mã đó.
+  // Acc khác (Sakuko…) giữ cách cũ: dò theo địa chỉ, mã ghi tay chỉ để đối chiếu.
   function pickCustomer(acct, text, issues, codeRe, writtenCode) {
-    const written = writtenCode || (text.match(codeRe) || [])[0];
-    const known = written && acct.customers.find(c => c.code.toUpperCase() === written.toUpperCase());
-    if (known) { issues.push({ key: 'customer', level: 'info', msg: `Mã KH lấy theo mã ghi trên file: ${known.code} (${known.name}).` }); return known; }
-    if (written) issues.push({ key: 'customer', level: 'warn', msg: `Mã ${written} ghi trên file không có trong DMKH, web dò theo địa chỉ giao.` });
+    if (writtenCode) {
+      const known = acct.customers.find(c => c.code.toUpperCase() === writtenCode.toUpperCase());
+      if (known) { issues.push({ key: 'customer', level: 'info', msg: `Mã KH lấy theo mã ghi trên file: ${known.code} (${known.name}).` }); return known; }
+      issues.push({ key: 'customer', level: 'warn', msg: `Mã ${writtenCode} ghi trên file không có trong DMKH, web dò theo địa chỉ giao.` });
+    }
     const m = matchAddr(acct.customers, text, acct.brandWords || []);
+    const written = writtenCode ? '' : (text.match(codeRe) || [])[0];
     let hit = m.hit;
+    if (!hit && written) hit = acct.customers.find(c => c.code.toUpperCase() === written.toUpperCase()) || null;
+    if (hit && written && hit.code.toUpperCase() !== written.toUpperCase()) issues.push({ key: 'customer', level: 'warn', msg: `Trên đơn có ghi mã ${written} nhưng địa chỉ giao khớp ${hit.code} (${hit.name}). Kiểm tra lại mã KH.` });
     if (!hit) issues.push({ key: 'customer', level: 'err', msg: `Không dò được cửa hàng từ địa chỉ "${text.replace(/\s+/g, ' ').slice(0, 90)}". Chọn ở ô Mã khách hàng (rồi bấm Ghi nhớ).` });
     else if (!m.exact && !written) issues.push({ key: 'customer', level: 'warn', msg: `Mã KH dò gần đúng: ${hit.code} (${hit.name}). Kiểm tra lại.` });
     return hit;
