@@ -4,7 +4,7 @@
 (function (root) {
   const BASE = root.FFM_DATA_BASE || 'data/';
   const FILES = { dmkh: 'DMKH.xlsx', dmsp: 'DMSP.xlsx', map: 'Code chuyển đổi.xlsx', tpl: 'Form final.xlsx' };
-  const PREFIX = { KKTC: 'KKTC', MOR: 'MORGT', BRG: 'BRGMART', AEON: 'AEON', SOIBIEN: 'SOIBIEN', ANNHIEN: 'ANHN', MIOMIO: 'MIOMIOW', FANTASY: 'FANTASY', FGARDEN: 'FGARDEN', HIENLUONG: 'HIENLUONG', HINODE: 'HINODE', JAPAUS: 'JAPAUS', SAKUKO: 'SAKUKO', SIBA: 'SIBA', ANHVIET: 'ANHVIET', CLEVER: 'CLEVERFOOD', FMKT: 'FMKTHNI', KAISER: 'CVS0', OHMEE: 'OHMEE', RFOOD: 'RFOODTP', TOP5: 'TOP5_MART', WEFRESH: 'WEFRESH', KPLAZA: 'KPLAZA', KOREAN: 'KOREAN', LMLUONG: 'LMLG', TATAMART: 'TATAMAT', JMART: 'JMART' };
+  const PREFIX = { KKTC: 'KKTC', MOR: 'MORGT', BRG: 'BRGMART', AEON: 'AEON', SOIBIEN: 'SOIBIEN', ANNHIEN: 'ANHN', MIOMIO: 'MIOMIOW', FANTASY: 'FANTASY', FGARDEN: 'FGARDEN', HIENLUONG: 'HIENLUONG', HINODE: 'HINODE', JAPAUS: 'JAPAUS', SAKUKO: 'SAKUKO', SIBA: 'SIBA', ANHVIET: 'ANHVIET', CLEVER: 'CLEVERFOOD', FMKT: 'FMKTHNI', KAISER: 'CVS0', OHMEE: 'OHMEE', RFOOD: 'RFOODTP', TOP5: 'TOP5_MART', WEFRESH: 'WEFRESH', KPLAZA: 'KPLAZA', KOREAN: 'KOREAN', LMLUONG: 'LMLG', TATAMART: 'TATAMAT', JMART: 'JMART', SATRA: ['SATRA', 'STFD'] };
   const LABEL = { dmkh: 'DMKH', dmsp: 'DMSP', map: 'Code chuyển đổi', tpl: 'Form final' };
   const CACHE = 'ffm-data-v1:';
   // Google Apps Script: thống kê + bảng "Code AEON" team tự thêm
@@ -45,7 +45,7 @@
     for (const r of rows.slice(h + 1)) {
       const code = norm(r[ci]), name = norm(r[ni]);
       if (!code || !name) continue;
-      for (const k in PREFIX) if (code.toUpperCase().startsWith(PREFIX[k])) out[k].push({ code, name });
+      for (const k in PREFIX) if ([].concat(PREFIX[k]).some(p => code.toUpperCase().startsWith(p))) out[k].push({ code, name });
     }
     if (!Object.keys(out).some(k => k !== '__acc' && out[k].length)) throw new Error('DMKH: không có mã KH nào của KKTC/MORGT/BRGMART/AEON/SOIBIEN');
     return out;
@@ -73,6 +73,12 @@
     const ws = wb.SheetNames.map(n => wb.Sheets[n]).find(s => rowsOf(s).some(r => /barcode\s*aeon/i.test(norm(r[0])))) || wb.Sheets[wb.SheetNames[0]];
     const map = {};
     rowsOf(ws).forEach(r => { const k = norm(r[0]).replace(/\.0+$/, ''), v = norm(r[1]); if (/^\d{6,14}$/.test(k) && v) map[k] = v; });
+    // các sheet khác (SATRA, LOTTE…): "Barcode sai" -> "Barcode đúng", theo tên sheet
+    const conv = {};
+    wb.SheetNames.forEach(n => { const s = wb.Sheets[n]; if (s === ws) return; const m = {};
+      rowsOf(s).forEach(r => { const k = norm(r[0]).replace(/\.0+$/, ''), v = norm(r[1]).replace(/\.0+$/, ''); if (/^\d{6,14}$/.test(k) && /^\d{6,14}$/.test(v)) m[k] = v; });
+      if (Object.keys(m).length) conv[norm(n).toUpperCase()] = m; });
+    map.__conv = conv;
     return map;
   }
 
@@ -83,7 +89,7 @@
       for (const k in extra) if (!val[k]) val[k] = extra[k];
       root.FFM_PC = val; root.FFM_DMSP = {}; for (const k in val) root.FFM_DMSP[k] = val[k][0][1]; root.FFM_CATALOG = Object.keys(val);
     }
-    if (key === 'map') root.FFM_AEON_MAP = val;
+    if (key === 'map') { root.FFM_CONV = val.__conv || {}; const m = Object.assign({}, val); delete m.__conv; root.FFM_AEON_MAP = m; }
     if (key === 'tpl') root.FFM_TPL = Uint8Array.from(atob(val), c => c.charCodeAt(0));
   }
   const b64 = buf => { let s = ''; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
@@ -93,11 +99,12 @@
     const name = FILES[key];
     const st = await stamp(name);
     if (!st) { status[key] = { src: 'gắn sẵn' }; return; }
-    try { localStorage.removeItem(CACHE + key + '@2'); } catch (e) {}
-    const c = lget(key + '@3');
+    try { localStorage.removeItem(CACHE + key + '@2'); if (key === 'map') localStorage.removeItem(CACHE + 'map@3'); } catch (e) {}
+    const V = key === 'map' ? '@4' : '@3';
+    const c = lget(key + V);
     if (c && c.tag === st.tag) { apply(key, c.val); status[key] = { src: 'web', at: c.mod }; return; }
     const val = PARSE[key](await getBook(name));
-    lset(key + '@3', { tag: st.tag, mod: st.mod, val });
+    lset(key + V, { tag: st.tag, mod: st.mod, val });
     apply(key, val); status[key] = { src: 'web', at: st.mod, fresh: true };
   }
 

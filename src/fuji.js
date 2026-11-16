@@ -224,7 +224,8 @@
   }
 
   /* tìm lưới bảng (đường kẻ ngang/dọc) trên ảnh đã phóng to */
-  function findGrid(canvas) {
+  function findGrid(canvas, o) {
+    o = o || {};
     const W = canvas.width, H = canvas.height, g = canvas.getContext('2d', { willReadFrequently: true });
     const p = g.getImageData(0, 0, W, H).data, dark = new Uint8Array(W * H);
     for (let i = 0, j = 0; i < p.length; i += 4, j++) dark[j] = (p[i] * 0.299 + p[i + 1] * 0.587 + p[i + 2] * 0.114) < 150 ? 1 : 0;
@@ -248,9 +249,13 @@
     }
     // chọn cụm đường kẻ ngang cách đều nhau nhiều nhất (thân bảng)
     const tx0 = med(hLines.map(l => l.items[0].x0)), tx1 = med(hLines.map(l => l.items[0].x1));
+    // o.minRowH (SATRA): 2 đường kẻ sát nhau (viền đôi dòng tiêu đề) gộp làm một
+    if (o.minRowH) hLines = hLines.filter((l, i) => i === 0 || l.c - hLines[i - 1].c >= o.minRowH);
     const top = hLines[0].c, bot = hLines[hLines.length - 1].c;
     const vl = [];
-    for (let x = Math.max(0, Math.round(tx0) - 3); x <= Math.min(W - 1, Math.round(tx1) + 3); x++) {
+    // o.fullWidth (SATRA): đường kẻ ngang bị đứt giữa chừng -> tìm đường kẻ dọc trên cả bề ngang trang
+    const vx0 = o.fullWidth ? 0 : Math.max(0, Math.round(tx0) - 3), vx1 = o.fullWidth ? W - 1 : Math.min(W - 1, Math.round(tx1) + 3);
+    for (let x = vx0; x <= vx1; x++) {
       let n = 0; for (let y = Math.round(top); y <= Math.round(bot); y++) { let d = 0; for (let k = -B; k <= B && !d; k++) { const xx = x + k; if (xx >= 0 && xx < W) d = dark[y * W + xx]; } n += d; }
       if (n > (bot - top) * 0.6) vl.push({ x });
     }
@@ -258,7 +263,7 @@
     if (vLines.length < 4) return null;
     const cols = vLines.map(l => l.c);
     // bản scan bị cắt mép phải: không thấy viền phải của cột cuối -> lấy mép phải đường kẻ ngang làm viền
-    if (tx1 - cols[cols.length - 1] > 40) cols.push(W - 1);
+    if (!o.fullWidth && tx1 - cols[cols.length - 1] > 40) cols.push(W - 1);
     return { rows: hLines.map(l => l.c), cols };
   }
   async function readBox(worker, src, box, whitelist, psm) {
@@ -287,7 +292,8 @@
     }
     return out;
   }
-  async function imageParse(blob, onProgress, tessOpts) {
+  async function imageParse(blob, onProgress, tessOpts, opts) {
+    opts = opts || {};
     const img = await loadImage(blob);
     const k = Math.max(1, 1600 / img.naturalWidth), src = document.createElement('canvas');
     src.width = Math.round(img.naturalWidth * k); src.height = Math.round(img.naturalHeight * k);
@@ -299,9 +305,9 @@
     const { data } = await worker.recognize(src);
     const words = (data.words || []).map(w => ({ t: w.text, x0: w.bbox.x0, y0: w.bbox.y0, x1: w.bbox.x1, y1: w.bbox.y1 }));
     const res = parseWords(words);
-    delete res.error; res.rows = [];
+    delete res.error; res.rows = []; res.text = data.text || ''; res.words = words;
     // ảnh mờ: đọc lại góc trên bên phải (Số Đơn, Ngày đặt) ở độ phóng lớn hơn
-    {
+    if (!opts.skipHeaderVote) {
       // đọc nhiều kiểu xử lý ảnh rồi bỏ phiếu (kể cả lần đọc cả trang): số nào xuất hiện nhiều nhất thì lấy; các lần đọc khác nhau -> báo chưa chắc
       const box = { x0: img.naturalWidth * 0.55, x1: img.naturalWidth, y0: 0, y1: img.naturalHeight * 0.2 };
       const pos = res.po ? [res.po] : [], dates = res.orderDate ? [res.orderDate] : [];
@@ -318,7 +324,7 @@
       if (vp) { res.po = vp.v; res.poUnsure = !vp.sure; }
       if (vd) { res.orderDate = vd.v; res.dateUnsure = !vd.sure; }
     }
-    const grid = findGrid(src);
+    const grid = findGrid(src, opts.grid);
     if (!grid) { res.error = 'Không tìm thấy bảng hàng (đường kẻ bảng) trong ảnh. Ảnh có bị mờ, nghiêng hay cắt mất bảng không?'; return res; }
     const inset = 4, cell = (ri, ci) => ({ x0: grid.cols[ci] + inset, x1: grid.cols[ci + 1] - inset, y0: grid.rows[ri] + inset, y1: grid.rows[ri + 1] - inset });
     // dòng tiêu đề: đọc chữ để biết cột nào là Mã vạch / Theo đơn / Đơn giá / Thành tiền
@@ -326,6 +332,13 @@
     for (let ci = 0; ci < nC; ci++) heads.push(fold(await readBox(worker, src, cell(0, ci), '', '6')));
     const find = re => heads.findIndex(h => re.test(h));
     const col = { bc: find(/vach|barcode/), qty: find(/theo|so\s*luong/), price: find(/don\s*gia|gia/), amt: find(/thanh\s*tien|tien/) };
+    // opts.relHeads (SATRA): dòng tiêu đề tô xám hay đọc sót chữ -> suy cột theo cột bên cạnh (Barcode sau Mã hàng, Đơn giá trước Thành tiền)
+    if (opts.relHeads) {
+      if (col.bc < 0) { const i = find(/ma\s*hang/), j = find(/ten\s*hang/); if (i >= 0) col.bc = i + 1; else if (j > 0) col.bc = j - 1; }
+      if (col.amt < 0) col.amt = find(/thanh/);
+      if (col.price < 0 && col.amt > 0) col.price = col.amt - 1;
+      if (col.qty < 0 && col.price > 0) col.qty = col.price - 1;
+    }
     if (col.bc < 0) col.bc = 3; if (col.qty < 0) col.qty = col.bc + 2; if (col.price < 0) col.price = nC - 2; if (col.amt < 0) col.amt = nC - 1;
     res.headers = heads;
     const toOrig = bx => ({ x0: bx.x0 / k, x1: bx.x1 / k, y0: bx.y0 / k, y1: bx.y1 / k });
@@ -341,12 +354,13 @@
       }
       const pk = pickBarcode(reads);
       let snapped = false;
-      const inCat = c => !!(root.FFM_DMSP && root.FFM_DMSP[String(c).padStart(14, '0')]);
+      const extra = opts.extraCat || [], inCat = c => !!(root.FFM_DMSP && root.FFM_DMSP[String(c).padStart(14, '0')]) || extra.includes(String(c));
       // đọc "chắc" nhưng không có trong danh mục thì vẫn coi là chưa chắc
       if (pk.sure && root.FFM_DMSP && !inCat(pk.code)) pk.sure = false;
-      if (!pk.sure) { const sc = snapCatalog(reads, root.FFM_CATALOG); if (sc) { pk.code = sc; snapped = true; } }
+      if (!pk.sure) { const sc = snapCatalog(reads, extra.length ? (root.FFM_CATALOG || []).concat(extra) : root.FFM_CATALOG); if (sc) { pk.code = sc; snapped = true; } }
       const nums = async (ci, parse) => { const out = []; for (const v of NUM_VARIANTS) { const x = parse(await readVar(worker, img, toOrig(cell(ri, ci)), '0123456789.,', v)); if (x != null && !Number.isNaN(x)) out.push(x); if (out.length >= 2 && out[0] === out[1]) break; } return out; };
-      const qs = await nums(col.qty, parseQty), ps = await nums(col.price, parseNum), as = await nums(col.amt, parseNum);
+      // opts.qtyDec3: SL in dạng "18,000" = 18 (SATRA)
+      const qs = await nums(col.qty, opts.qtyDec3 ? (t => { const x = String(t).replace(/[^\d.,]/g, ''); return /^\d+[.,]\d{3}$/.test(x) ? Number(x.replace(',', '.')) : parseQty(t); }) : parseQty), ps = await nums(col.price, parseNum), as = await nums(col.amt, parseNum);
       let q = qs[0] ?? null, p = ps[0] ?? null, a = as[0] ?? null, verified = false;
       outer: for (const qq of qs) for (const pp of ps) for (const aa of as) if (Math.abs(qq * pp - aa) <= 1) { q = qq; p = pp; a = aa; verified = true; break outer; }
       // xem trước: cả dòng từ cột Mã vạch đến Thành tiền
@@ -507,6 +521,6 @@
   }
 
   root.__lastAeonItems = null;
-  const api = { pdfHasText, pdfPageImages, pdfItems, kktcImageParse, parseKktcTokens, aeonPdfParse, snapCatalog, pickBarcode, parseQty, gtinOk, parseNum, parseWords, pdfWords, imageParse, fold };
+  const api = { findGrid, pdfHasText, pdfPageImages, pdfItems, kktcImageParse, parseKktcTokens, aeonPdfParse, snapCatalog, pickBarcode, parseQty, gtinOk, parseNum, parseWords, pdfWords, imageParse, fold };
   if (typeof module !== 'undefined') module.exports = api; else root.FUJI = api;
 })(typeof window !== 'undefined' ? window : globalThis);

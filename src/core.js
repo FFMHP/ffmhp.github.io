@@ -835,6 +835,61 @@
   }
 
 
+  /* SATRA: đọc ảnh (PDF scan -> ảnh từng trang) bằng bộ đọc bảng có đường kẻ của BRG */
+  const SATRA_CONV = {"6935855701649": "8859578600257", "6935855702639": "8859578600288", "6935855701045": "8859578600318", "6935855703582": "8859578600370", "6935855703520": "8859578600349", "6935855700840": "8859578600400", "6935855700406": "8859578600431", "6935855701076": "8859578600462", "6935855703551": "8859578600523", "6935855703490": "8859578600493", "6928542913296": "8859578600585", "6928542913043": "8859578600646", "6928542913272": "8859578600615", "6928542913050": "8859578600677"};
+  async function parseSatra(acct, f, onProgress, libs) {
+    const F = root.FUJI, isPdf = /\.pdf$/i.test(f.name), issues = [];
+    try { if (isPdf) await libs.pdf(); await libs.ocr(); } catch (e) { return { error: 'Không tải được bộ đọc PDF / nhận dạng chữ (cần internet).' }; }
+    const conv = (root.FFM_CONV && root.FFM_CONV.SATRA) || SATRA_CONV;
+    const opts = { skipHeaderVote: true, qtyDec3: true, extraCat: Object.keys(conv), grid: { fullWidth: true, minRowH: 20 }, relHeads: true };
+    let imgs;
+    if (isPdf) {
+      if (await F.pdfHasText(f.buf)) return { error: 'File PDF này có chữ (không phải bản scan). Gửi anh Tài file mẫu để làm thêm cách đọc PDF chữ cho SATRA.' };
+      onProgress && onProgress('PDF là bản scan, đang chuyển thành ảnh để đọc…');
+      imgs = await F.pdfPageImages(f.buf);
+    } else imgs = [new Blob([f.buf])];
+    let rows = [], text = '';
+    for (let i = 0; i < imgs.length; i++) {
+      let r;
+      try { r = await F.imageParse(imgs[i], m => onProgress && onProgress(`Trang ${i + 1}/${imgs.length}: ${m}`), libs.tessOpts, opts); }
+      catch (e) { return { error: 'Không đọc được phiếu: ' + (e && e.message || e) }; }
+      text += '\n' + (r.text || '');
+      if (r.rows) rows = rows.concat(r.rows);
+    }
+    if (!rows.length) return { error: 'Không đọc được dòng hàng nào trên phiếu SATRA. Ảnh có bị mờ, nghiêng hay cắt mất bảng không?' };
+    const T = text.replace(/[|]/g, ' ');
+    // số đơn: "Đơn đặt hàng số: P-000131298"
+    const mPo = T.match(/\bP\s*[-–—.]\s*(\d[\d\s]{5,12}\d)/) || T.match(/s[ốo]\s*:?\s*P\s*[-–—]?\s*(\d{6,})/i);
+    const po = mPo ? 'P-' + mPo[1].replace(/\s/g, '') : '';
+    if (!po) issues.push({ key: 'po', level: 'err', msg: 'Không đọc được "Đơn đặt hàng số" (P-…). Nhập tay Số đơn.' });
+    else issues.push({ key: 'po', level: 'warn', msg: `Số đơn đọc từ bản scan: ${po}. So lại với phiếu trước khi tải.` });
+    // ngày trên phiếu SATRA in dạng tháng/ngày/năm (11/16/2026)
+    const md = (re) => { const m = T.match(re); if (!m) return ''; let a = +m[1], b = +m[2]; if (a > 12 && b <= 12) [a, b] = [b, a]; return `${b}/${a}/${m[3]}`.replace(/\b(\d)\//g, '0$1/'); };
+    const dOrd = md(/ng[aà]y\s*[dđ][aặ]t\s*h[aà]ng\s*:?\s*(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(20\d\d)/i), dDel = md(/ng[aà]y\s*giao\s*h[aà]ng\s*:?\s*(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(20\d\d)/i);
+    if (dOrd || dDel) issues.push({ level: 'info', msg: `Trên phiếu: ngày đặt ${dOrd || '?'}, ngày giao ${dDel || '?'}. Ngày giao trong form tính theo ô Ngày về đơn + 3 ngày làm việc.` });
+    // cửa hàng: dòng "Đơn vị mua hàng" (+ địa chỉ). Satrafoods -> mã STFD…, còn lại -> mã SATRA…
+    const lines = T.split('\n');
+    const bi = lines.findIndex(l => /[dđ][oơ]n\s*v[iị]\s*mua/i.test(l));
+    const buyer = bi >= 0 ? lines[bi].replace(/^.*mua\s*h[aà]ng\s*:?/i, '').trim() : '';
+    const addr = bi >= 0 ? lines.slice(bi + 1, bi + 3).filter(l => /[dđ][iị]a\s*ch[iỉ]/i.test(l)).join(' ') : '';
+    const isFood = /satra\s*food/i.test(buyer);
+    const pool = acct.customers.filter(c => isFood ? /^STFD/i.test(c.code) : !/^STFD/i.test(c.code));
+    let m = matchAddr(pool, buyer, acct.brandWords);
+    if (!m.hit && addr) m = matchAddr(pool, buyer + ' ' + addr, acct.brandWords);
+    const customer = m.hit ? m.hit.code : '';
+    if (!m.hit) issues.push({ key: 'customer', level: 'err', msg: `Không dò được cửa hàng "${buyer || '?'}" trong DMKH. Chọn ở ô Mã khách hàng.` });
+    else if (!m.exact) issues.push({ key: 'customer', level: 'warn', msg: `Khớp gần đúng: "${buyer}" → ${m.hit.code} · ${m.hit.name}. Kiểm tra lại.` });
+    const out = rows.map((x, i) => validateFuji({ row: i + 1, barcode: x.barcode || '', qty: x.qty, price: x.price, amount: x.amount, preview: x.preview || '', conv, bcState: x.bcSure ? 'sure' : x.bcSnapped ? 'snap' : x.bcGuessed ? 'guess' : 'weak' }));
+    dupCheck(out, issues);
+    // tổng cộng: "Tổng cộng 252,000 7 128 000,00"
+    const tl = lines.find(l => /t[oổ]ng\s*c[oộ]ng/i.test(l)) || '';
+    const mq = tl.match(/(\d{1,3}(?:[.,]\d{3})*)[.,](\d{3})\b/);
+    const sumQ = out.reduce((a, l) => a + (l.qty || 0), 0);
+    if (mq) { const tq = Number(mq[1].replace(/[.,]/g, '')); issues.push(tq === sumQ ? { level: 'info', msg: `Tổng SL ${sumQ} khớp dòng Tổng cộng trên phiếu.` } : { level: 'warn', msg: `Tổng SL các dòng (${sumQ}) khác dòng Tổng cộng trên phiếu (${tq}). Có thể thiếu dòng hoặc đọc sai SL.` }); }
+    issues.push({ level: 'info', msg: `Đọc từ ${isPdf ? 'PDF scan' : 'ảnh'}: ${out.length} dòng. Ô đỏ là đọc nhầm: sửa trực tiếp trong bảng theo phiếu.` });
+    return { fixedPo: true, po, customer, store: buyer, lines: out, issues, editable: true, source: 'image' };
+  }
+
   /* JMART (13/11 → 16/11): PDF "PHIẾU ĐẶT HÀNG NHÀ CUNG CẤP" · SL in dạng "24.000" (= 24) · số đơn = Số phiếu đặt (DH…) */
   function parseJmart(acct, items, fileName) {
     const issues = [];
@@ -1180,6 +1235,17 @@
       fixedCustomer: 'JMART0001', customers: [{ code: 'JMART0001', name: 'CÔNG TY CỔ PHẨN THƯƠNG MẠI DỊCH VỤ JM QUỐC TẾ' }]
     })
 
+    ,
+    // SATRA (16/11): phiếu "ĐƠN ĐẶT HÀNG" mẫu MH-01, thường là bản scan PDF (không có chữ) hoặc ảnh
+    // SL in dạng "18,000" (= 18) · số đơn = "Đơn đặt hàng số" P-… · barcode sai đổi theo sheet SATRA (Code chuyển đổi)
+    SATRA: {
+      label: 'SATRA / Satrafoods (PDF scan hoặc ảnh)', fixedPo: true, async: true, accept: '.pdf,.jpg,.jpeg,.png',
+      leadDays: 3, workDays: true, fromNgayVe: true,
+      brandWords: ['satra', 'satrafoods', 'satrafood', 'trung', 'tam', 'thuong', 'mai', 'tttm', 'sieu', 'thi'],
+      customers: [{ code: 'SATRA004', name: 'Trung tâm Thương Mại Satra Củ Chi' }],
+      async parseFile(f, onProgress, libs) { return parseSatra(this, f, onProgress, libs); }
+    }
+
   };
 
   function parseAeonCsv(buf) {
@@ -1266,6 +1332,9 @@
   // kiểm tra 1 dòng đọc từ PDF/ảnh
   function validateFuji(l) {
     l.flags = [];
+    // SATRA: barcode in trên phiếu sai -> đổi theo sheet SATRA trong Code chuyển đổi
+    if (l.conv && l.barcode && l.conv[l.barcode]) { const from = l.barcode; l.barcode = l.conv[from]; l.convFrom = from; }
+    if (l.convFrom && l.conv && l.conv[l.convFrom] === l.barcode) l.flags.push({ level: 'info', msg: `Barcode trên phiếu ${l.convFrom} đã đổi thành ${l.barcode} theo Code chuyển đổi (sheet SATRA).` });
     const F = root.FUJI || (typeof require !== 'undefined' ? require('./fuji.js') : null);
     if (!l.barcode) l.flags.push({ level: 'err', msg: 'Thiếu barcode' });
     else if (!F.gtinOk(l.barcode)) l.flags.push({ level: 'err', msg: 'Barcode sai số kiểm tra: còn ít nhất 1 chữ số chưa đúng. Sửa theo ảnh dòng rồi bấm Enter (viền ô chuyển xanh là đúng).' });
