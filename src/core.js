@@ -841,7 +841,7 @@
     const F = root.FUJI, isPdf = /\.pdf$/i.test(f.name), issues = [];
     try { if (isPdf) await libs.pdf(); await libs.ocr(); } catch (e) { return { error: 'Không tải được bộ đọc PDF / nhận dạng chữ (cần internet).' }; }
     const conv = (root.FFM_CONV && root.FFM_CONV.SATRA) || SATRA_CONV;
-    const opts = { skipHeaderVote: true, qtyDec3: true, extraCat: Object.keys(conv), grid: { fullWidth: true, minRowH: 20 }, relHeads: true, deskew: true, headMode: 'otsu', totalRow: true };
+    const opts = { skipHeaderVote: true, qtyDec3: true, extraCat: Object.keys(conv), grid: { fullWidth: true, minRowH: 20 }, relHeads: true, deskew: true, headMode: 'otsu', totalRow: true, bcRetry: 3, qtyFromAmt: true };
     let imgs;
     if (isPdf) {
       if (await F.pdfHasText(f.buf)) return { error: 'File PDF này có chữ (không phải bản scan). Gửi anh Tài file mẫu để làm thêm cách đọc PDF chữ cho SATRA.' };

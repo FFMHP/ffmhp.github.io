@@ -371,8 +371,14 @@
       onProgress && onProgress(`Đang đọc dòng hàng ${ri}/${grid.rows.length - 2}…`);
       const bcBox = toOrig(cell(ri, col.bc));
       const first = await readVar(worker, img, bcBox, '0123456789', BC_VARIANTS[0]);
-      if (digits(first).length < 8) continue; // dòng trống / dòng tổng
       const reads = [first];
+      // lần đọc đầu ra ít số: chưa chắc là dòng trống (Chrome Windows vẽ ảnh hơi khác) -> thử thêm vài kiểu xử lý ảnh rồi mới bỏ
+      if (digits(first).length < 8) {
+        if (!opts.bcRetry) continue; // dòng trống / dòng tổng
+        let ok = false;
+        for (let vi = 1; vi <= opts.bcRetry && vi < BC_VARIANTS.length; vi++) { const t = await readVar(worker, img, bcBox, '0123456789', BC_VARIANTS[vi]); if (digits(t).length >= 8) { reads.length = 0; reads.push(t); ok = true; break; } }
+        if (!ok) continue;
+      }
       for (let vi = 1; vi < BC_VARIANTS.length; vi++) {
         const pk = pickBarcode(reads); if (pk.sure) break;
         reads.push(await readVar(worker, img, bcBox, '0123456789', BC_VARIANTS[vi]));
@@ -388,6 +394,8 @@
       const qs = await nums(col.qty, opts.qtyDec3 ? (t => { const x = String(t).replace(/[^\d.,]/g, ''); return /^\d+[.,]\d{3}$/.test(x) ? Number(x.replace(',', '.')) : parseQty(t); }) : parseQty), ps = await nums(col.price, parseNum), as = await nums(col.amt, parseNum);
       let q = qs[0] ?? null, p = ps[0] ?? null, a = as[0] ?? null, verified = false;
       outer: for (const qq of qs) for (const pp of ps) for (const aa of as) if (Math.abs(qq * pp - aa) <= 1) { q = qq; p = pp; a = aa; verified = true; break outer; }
+      // opts.qtyFromAmt (SATRA): SL đọc lệch (24,000 -> 240) nhưng Đơn giá & Thành tiền đọc khớp nhau -> SL = Thành tiền / Đơn giá nếu ra số nguyên
+      if (!verified && opts.qtyFromAmt) outer2: for (const pp of ps) for (const aa of as) { if (!pp || !aa) continue; const qq = aa / pp; if (Number.isInteger(qq) && qq > 0 && qq < 100000 && (qs.length || 1) && (qs.some(x => String(x).startsWith(String(qq))) || !qs.length)) { q = qq; p = pp; a = aa; verified = true; break outer2; } }
       // xem trước: cả dòng từ cột Mã vạch đến Thành tiền
       const strip = toOrig({ x0: grid.cols[col.bc], x1: grid.cols[Math.min(nC, col.amt + 1)], y0: grid.rows[ri], y1: grid.rows[ri + 1] });
       let preview = '';
