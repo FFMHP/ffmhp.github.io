@@ -547,7 +547,7 @@ button.danger{color:var(--err);border-color:var(--err)}
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v56</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v57</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
@@ -1469,24 +1469,32 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
     return { head, lines, issues };
   }
   // mã KH: dò theo địa chỉ giao trên đơn; mã ghi tay trên file (vd FGARDEN0001) chỉ để đối chiếu
-  function pickCustomer(acct, text, issues, codeRe) {
+  // tìm mã KH ghi ở bất kỳ ô nào trong sheet đầu (cột "Mã khách hàng", ô ghi tay…)
+  function findCode(wb, re) {
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    for (const a in ws) { if (a[0] === '!') continue; const m = String(ws[a].v == null ? '' : ws[a].v).match(re); if (m) return m[1].toUpperCase(); }
+    return '';
+  }
+  // mã ghi sẵn trên file (cột "Mã khách hàng" hoặc ghi tay) có trong DMKH -> lấy luôn mã đó (góp ý của Tiến 16/11)
+  function pickCustomer(acct, text, issues, codeRe, writtenCode) {
+    const written = writtenCode || (text.match(codeRe) || [])[0];
+    const known = written && acct.customers.find(c => c.code.toUpperCase() === written.toUpperCase());
+    if (known) { issues.push({ key: 'customer', level: 'info', msg: `Mã KH lấy theo mã ghi trên file: ${known.code} (${known.name}).` }); return known; }
+    if (written) issues.push({ key: 'customer', level: 'warn', msg: `Mã ${written} ghi trên file không có trong DMKH, web dò theo địa chỉ giao.` });
     const m = matchAddr(acct.customers, text, acct.brandWords || []);
-    const written = (text.match(codeRe) || [])[0];
     let hit = m.hit;
-    if (!hit && written) hit = acct.customers.find(c => c.code.toUpperCase() === written.toUpperCase()) || null;
-    if (hit && written && hit.code.toUpperCase() !== written.toUpperCase()) issues.push({ key: 'customer', level: 'warn', msg: `Trên đơn có ghi mã ${written} nhưng địa chỉ giao khớp ${hit.code} (${hit.name}). Kiểm tra lại mã KH.` });
     if (!hit) issues.push({ key: 'customer', level: 'err', msg: `Không dò được cửa hàng từ địa chỉ "${text.replace(/\s+/g, ' ').slice(0, 90)}". Chọn ở ô Mã khách hàng (rồi bấm Ghi nhớ).` });
     else if (!m.exact && !written) issues.push({ key: 'customer', level: 'warn', msg: `Mã KH dò gần đúng: ${hit.code} (${hit.name}). Kiểm tra lại.` });
     return hit;
   }
 
   function parseFreshGarden(acct, wb, fileName) {
-    const s = parseSimpleSheet(acct, wb, fileName, { bcHead: /^ma hang$|barcode|ma vach/, qtyHead: /^so luong/ });
+    // tiêu đề cột: "Mã hàng"/"BarCode"/"Mã vạch" và "Số lượng…"/"SL ĐẶT"/"SL" (góp ý của Tiến 16/11)
+    const s = parseSimpleSheet(acct, wb, fileName, { bcHead: /^ma hang$|barcode|ma vach|^ma sp$/, qtyHead: /^so luong|^sl dat|^sl$/ });
     if (s.error) return s;
     const orderDate = dmy((fold(s.head).match(/ngay dat[^\n]*/) || [''])[0]);
     const addr = (s.head.split('\n').find(l => /dia chi/.test(fold(l))) || s.head);
-    const hit = pickCustomer(acct, addr, s.issues, /FGARDEN\d{3,}/i);
-    if (!orderDate) s.issues.push({ level: 'warn', msg: 'Không đọc được "Ngày đặt hàng" trên đơn.' });
+    const hit = pickCustomer(acct, addr, s.issues, /FGARDEN\d{3,}/i, findCode(wb, /^\s*(FGARDEN\d{3,})\s*$/i));
     if (orderDate) s.issues.push({ level: 'info', msg: `Ngày đặt trên đơn: ${orderDate.split('-').reverse().join('/')}.` });
     return { prefix: acct.prefix, seq: acct.seq, abbr: '', noAbbr: true, customer: hit ? hit.code : '', store: addr.replace(/^.*?:\s*/, ''), lines: s.lines, issues: s.issues };
   }
