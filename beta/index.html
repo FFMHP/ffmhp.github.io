@@ -547,7 +547,7 @@ button.danger{color:var(--err);border-color:var(--err)}
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v55</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 13/11/2026 · v56</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
@@ -1908,6 +1908,41 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
     return { prefix: acct.prefix, seq: acct.seq, abbr: '', noAbbr: true, customer: hit ? hit.code : '', store: mName ? mName[1].trim() : 'Tatamart', lines, issues };
   }
 
+
+  /* JMART (13/11 → 16/11): PDF "PHIẾU ĐẶT HÀNG NHÀ CUNG CẤP" · SL in dạng "24.000" (= 24) · số đơn = Số phiếu đặt (DH…) */
+  function parseJmart(acct, items, fileName) {
+    const issues = [];
+    const M = mergeRuns(items), F = re => M.find(x => re.test(x.t));
+    const hBc = F(/^barcode$/i), hQty = F(/^số lượng$/i);
+    if (!hBc || !hQty) return { error: 'Không thấy cột Barcode / Số lượng trên phiếu. File này có đúng mẫu "PHIẾU ĐẶT HÀNG NHÀ CUNG CẤP" của JMART không?' };
+    const heads = { stt: F(/^st$/i), mvt: F(/^mã vật tư$/i), bc: hBc, name: F(/^tên đầy đủ$/i), ton: F(/^tồn kho$/i), unit: F(/^đvt$/i), qc: F(/^qc$/i), qty: hQty, price: F(/^đơn giá$/i), ck: F(/^chiết khấu$/i), amt: F(/^thành tiền$/i) };
+    const tot = F(/^tổng:$/i);
+    const rows = pdfTable(items, { heads, qty: 'qty', bc: 'bc', name: 'name', top: hQty.y1 + 2, stop: tot ? tot.y0 - 1 : 0 });
+    for (let i = rows.length - 1; i >= 0; i--) { const t = rows[i].anchor.t; if (!/^\d{1,3}(,\d{3})*\.\d{3}$/.test(t)) rows.splice(i, 1); else rows[i].anchor = Object.assign({}, rows[i].anchor, { t: String(Number(t.replace(/,/g, ''))) }); }
+    if (!rows.length) return { error: 'Không thấy dòng hàng nào trên phiếu JMART.' };
+    const lines = pdfLines(rows, issues);
+    // kiểm tra: SL × đơn giá = thành tiền
+    rows.forEach((r, i) => {
+      const pr = r.cell('price').map(x => x.t).join('').replace(/,/g, ''), am = r.cell('amt').map(x => x.t).join('').replace(/,/g, '');
+      const p = parseFloat(pr), a = parseFloat(am);
+      if (p && a && Math.abs(lines[i].qty * p - a) > 1) lines[i].flags.push({ level: 'warn', msg: `SL × đơn giá (${Math.round(lines[i].qty * p).toLocaleString('vi-VN')}) ≠ thành tiền (${Math.round(a).toLocaleString('vi-VN')}). Kiểm tra SL theo phiếu.` });
+      lines[i]._amt = a || 0;
+    });
+    if (tot) {
+      const tv = M.filter(x => Math.abs(x.y0 - tot.y0) < 3 && x.x0 > (heads.amt ? heads.amt.x0 - 20 : 500)).map(x => Number(x.t.replace(/,/g, ''))).filter(Boolean)[0];
+      const sum = lines.reduce((s, l) => s + (l._amt || 0), 0);
+      if (tv) issues.push(Math.abs(tv - sum) <= 1 ? { level: 'info', msg: `Khớp tổng thành tiền với dòng Tổng trên phiếu: ${Math.round(sum).toLocaleString('vi-VN')}.` } : { level: 'err', msg: `Tổng thành tiền các dòng (${Math.round(sum).toLocaleString('vi-VN')}) khác dòng Tổng trên phiếu (${tv.toLocaleString('vi-VN')}). Có thể thiếu dòng.` });
+    }
+    lines.forEach(l => delete l._amt);
+    const txt = allText(M);
+    const mPo = txt.match(/Số phiếu đặt:?\s*(DH\d+)/i) || txt.match(/\b(DH\d{6,})\b/);
+    const po = mPo ? mPo[1].toUpperCase() : '';
+    if (!po) issues.push({ key: 'po', level: 'err', msg: 'Không đọc được Số phiếu đặt (DH…). Nhập tay Số đơn.' });
+    const md = txt.match(/Ngày in\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+    if (md) issues.push({ level: 'info', msg: `Ngày in phiếu: ${md[1]}.` });
+    return { fixedPo: true, editable: true, po, customer: acct.fixedCustomer, store: 'JMART 346 Bến Vân Đồn', lines, issues, source: 'pdf' };
+  }
+
   /* ---------- Account rules ---------- */
   const ACCOUNTS = {
     KKTC: {
@@ -2214,6 +2249,11 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
       parse(wb, fileName) { return parseTatamart(this, wb, fileName || ''); }
     }
 
+    ,
+    JMART: pdfAcct('JMART (PDF)', parseJmart, {
+      fixedCustomer: 'JMART0001', customers: [{ code: 'JMART0001', name: 'CÔNG TY CỔ PHẨN THƯƠNG MẠI DỊCH VỤ JM QUỐC TẾ' }]
+    })
+
   };
 
   function parseAeonCsv(buf) {
@@ -2403,7 +2443,7 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
 (function (root) {
   const BASE = root.FFM_DATA_BASE || 'data/';
   const FILES = { dmkh: 'DMKH.xlsx', dmsp: 'DMSP.xlsx', map: 'Code chuyển đổi.xlsx', tpl: 'Form final.xlsx' };
-  const PREFIX = { KKTC: 'KKTC', MOR: 'MORGT', BRG: 'BRGMART', AEON: 'AEON', SOIBIEN: 'SOIBIEN', ANNHIEN: 'ANHN', MIOMIO: 'MIOMIOW', FANTASY: 'FANTASY', FGARDEN: 'FGARDEN', HIENLUONG: 'HIENLUONG', HINODE: 'HINODE', JAPAUS: 'JAPAUS', SAKUKO: 'SAKUKO', SIBA: 'SIBA', ANHVIET: 'ANHVIET', CLEVER: 'CLEVERFOOD', FMKT: 'FMKTHNI', KAISER: 'CVS0', OHMEE: 'OHMEE', RFOOD: 'RFOODTP', TOP5: 'TOP5_MART', WEFRESH: 'WEFRESH', KPLAZA: 'KPLAZA', KOREAN: 'KOREAN', LMLUONG: 'LMLG', TATAMART: 'TATAMAT' };
+  const PREFIX = { KKTC: 'KKTC', MOR: 'MORGT', BRG: 'BRGMART', AEON: 'AEON', SOIBIEN: 'SOIBIEN', ANNHIEN: 'ANHN', MIOMIO: 'MIOMIOW', FANTASY: 'FANTASY', FGARDEN: 'FGARDEN', HIENLUONG: 'HIENLUONG', HINODE: 'HINODE', JAPAUS: 'JAPAUS', SAKUKO: 'SAKUKO', SIBA: 'SIBA', ANHVIET: 'ANHVIET', CLEVER: 'CLEVERFOOD', FMKT: 'FMKTHNI', KAISER: 'CVS0', OHMEE: 'OHMEE', RFOOD: 'RFOODTP', TOP5: 'TOP5_MART', WEFRESH: 'WEFRESH', KPLAZA: 'KPLAZA', KOREAN: 'KOREAN', LMLUONG: 'LMLG', TATAMART: 'TATAMAT', JMART: 'JMART' };
   const LABEL = { dmkh: 'DMKH', dmsp: 'DMSP', map: 'Code chuyển đổi', tpl: 'Form final' };
   const CACHE = 'ffm-data-v1:';
   // Google Apps Script: thống kê + bảng "Code AEON" team tự thêm
@@ -2800,7 +2840,7 @@ $('addBtn').addEventListener('click', () => {
   $('addBc').value = ''; $('addPc').value = ''; acctNote();
 });
 // Mã KH: team tự thêm (chọn tay ở ô Mã khách hàng là tự lưu; hoặc thêm trong ô "+ Thêm mã khách hàng")
-const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/, ANNHIEN: /^ANHN/, MIOMIO: /^MIOMIOW/, FANTASY: /^FANTASY/, FGARDEN: /^FGARDEN/, HIENLUONG: /^HIENLUONG/, HINODE: /^HINODE/, JAPAUS: /^JAPAUS/, SAKUKO: /^SAKUKO/, SIBA: /^SIBA/, ANHVIET: /^ANHVIET/, CLEVER: /^CLEVERFOOD/, FMKT: /^FMKTHNI/, KAISER: /^CVS/, OHMEE: /^OHMEE/, RFOOD: /^RFOODTP/, TOP5: /^TOP5_MART/, WEFRESH: /^WEFRESH/, KPLAZA: /^KPLAZA/, KOREAN: /^KOREAN/, LMLUONG: /^LMLG/, TATAMART: /^TATAMAT/ };
+const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/, ANNHIEN: /^ANHN/, MIOMIO: /^MIOMIOW/, FANTASY: /^FANTASY/, FGARDEN: /^FGARDEN/, HIENLUONG: /^HIENLUONG/, HINODE: /^HINODE/, JAPAUS: /^JAPAUS/, SAKUKO: /^SAKUKO/, SIBA: /^SIBA/, ANHVIET: /^ANHVIET/, CLEVER: /^CLEVERFOOD/, FMKT: /^FMKTHNI/, KAISER: /^CVS/, OHMEE: /^OHMEE/, RFOOD: /^RFOODTP/, TOP5: /^TOP5_MART/, WEFRESH: /^WEFRESH/, KPLAZA: /^KPLAZA/, KOREAN: /^KOREAN/, LMLUONG: /^LMLG/, TATAMART: /^TATAMAT/, JMART: /^JMART/ };
 function saveCust(acctKey, code, store){
   const list = (window.FFM_CUST_SHARED || []).filter(x => !(x.acct === acctKey && x.name.trim().toLowerCase() === store.trim().toLowerCase()));
   list.push({ acct: acctKey, code, name: store.trim() });

@@ -821,6 +821,41 @@
     return { prefix: acct.prefix, seq: acct.seq, abbr: '', noAbbr: true, customer: hit ? hit.code : '', store: mName ? mName[1].trim() : 'Tatamart', lines, issues };
   }
 
+
+  /* JMART (13/11 → 16/11): PDF "PHIẾU ĐẶT HÀNG NHÀ CUNG CẤP" · SL in dạng "24.000" (= 24) · số đơn = Số phiếu đặt (DH…) */
+  function parseJmart(acct, items, fileName) {
+    const issues = [];
+    const M = mergeRuns(items), F = re => M.find(x => re.test(x.t));
+    const hBc = F(/^barcode$/i), hQty = F(/^số lượng$/i);
+    if (!hBc || !hQty) return { error: 'Không thấy cột Barcode / Số lượng trên phiếu. File này có đúng mẫu "PHIẾU ĐẶT HÀNG NHÀ CUNG CẤP" của JMART không?' };
+    const heads = { stt: F(/^st$/i), mvt: F(/^mã vật tư$/i), bc: hBc, name: F(/^tên đầy đủ$/i), ton: F(/^tồn kho$/i), unit: F(/^đvt$/i), qc: F(/^qc$/i), qty: hQty, price: F(/^đơn giá$/i), ck: F(/^chiết khấu$/i), amt: F(/^thành tiền$/i) };
+    const tot = F(/^tổng:$/i);
+    const rows = pdfTable(items, { heads, qty: 'qty', bc: 'bc', name: 'name', top: hQty.y1 + 2, stop: tot ? tot.y0 - 1 : 0 });
+    for (let i = rows.length - 1; i >= 0; i--) { const t = rows[i].anchor.t; if (!/^\d{1,3}(,\d{3})*\.\d{3}$/.test(t)) rows.splice(i, 1); else rows[i].anchor = Object.assign({}, rows[i].anchor, { t: String(Number(t.replace(/,/g, ''))) }); }
+    if (!rows.length) return { error: 'Không thấy dòng hàng nào trên phiếu JMART.' };
+    const lines = pdfLines(rows, issues);
+    // kiểm tra: SL × đơn giá = thành tiền
+    rows.forEach((r, i) => {
+      const pr = r.cell('price').map(x => x.t).join('').replace(/,/g, ''), am = r.cell('amt').map(x => x.t).join('').replace(/,/g, '');
+      const p = parseFloat(pr), a = parseFloat(am);
+      if (p && a && Math.abs(lines[i].qty * p - a) > 1) lines[i].flags.push({ level: 'warn', msg: `SL × đơn giá (${Math.round(lines[i].qty * p).toLocaleString('vi-VN')}) ≠ thành tiền (${Math.round(a).toLocaleString('vi-VN')}). Kiểm tra SL theo phiếu.` });
+      lines[i]._amt = a || 0;
+    });
+    if (tot) {
+      const tv = M.filter(x => Math.abs(x.y0 - tot.y0) < 3 && x.x0 > (heads.amt ? heads.amt.x0 - 20 : 500)).map(x => Number(x.t.replace(/,/g, ''))).filter(Boolean)[0];
+      const sum = lines.reduce((s, l) => s + (l._amt || 0), 0);
+      if (tv) issues.push(Math.abs(tv - sum) <= 1 ? { level: 'info', msg: `Khớp tổng thành tiền với dòng Tổng trên phiếu: ${Math.round(sum).toLocaleString('vi-VN')}.` } : { level: 'err', msg: `Tổng thành tiền các dòng (${Math.round(sum).toLocaleString('vi-VN')}) khác dòng Tổng trên phiếu (${tv.toLocaleString('vi-VN')}). Có thể thiếu dòng.` });
+    }
+    lines.forEach(l => delete l._amt);
+    const txt = allText(M);
+    const mPo = txt.match(/Số phiếu đặt:?\s*(DH\d+)/i) || txt.match(/\b(DH\d{6,})\b/);
+    const po = mPo ? mPo[1].toUpperCase() : '';
+    if (!po) issues.push({ key: 'po', level: 'err', msg: 'Không đọc được Số phiếu đặt (DH…). Nhập tay Số đơn.' });
+    const md = txt.match(/Ngày in\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+    if (md) issues.push({ level: 'info', msg: `Ngày in phiếu: ${md[1]}.` });
+    return { fixedPo: true, editable: true, po, customer: acct.fixedCustomer, store: 'JMART 346 Bến Vân Đồn', lines, issues, source: 'pdf' };
+  }
+
   /* ---------- Account rules ---------- */
   const ACCOUNTS = {
     KKTC: {
@@ -1126,6 +1161,11 @@
       customers: [{"code": "TATAMAT0020", "name": "TATAMART BÌNH NGUYÊN"}, {"code": "TATAMAT0021", "name": "TATAMART BẠCH TRỮ"}, {"code": "TATAMAT0022", "name": "TATAMART NGUYỄN BÁ QUYỀN"}, {"code": "TATAMAT0023", "name": "TATAMART PHÙ LỖ"}, {"code": "TATAMAT0024", "name": "TATAMART YÊN LẠC"}, {"code": "TATAMAT0025", "name": "TATAMART TAM HỒNG"}, {"code": "TATAMAT0026", "name": "TATAMART 102 NGUYỄN KHOAN"}, {"code": "TATAMAT0027", "name": "TATAMART 41 NGUYỄN TRÃI"}, {"code": "TATAMAT0028", "name": "TATAMART 20 LÝ THƯỜNG KIỆT"}, {"code": "TATAMAT0029", "name": "TATAMART 412 HÙNG VƯƠNG"}, {"code": "TATAMAT0030", "name": "TATAMART PHỐ LỒ"}, {"code": "TATAMAT0031", "name": "TATAMART CHỢ LẦM"}, {"code": "TATAMAT0032", "name": "TATAMART 102 TRƯNG TRẮC"}, {"code": "TATAMAT0033", "name": "TATAMART TỀ LỖ"}, {"code": "TATAMAT0034", "name": "TATAMART THẠCH ĐÀ"}, {"code": "TATAMAT0035", "name": "TATAMART BÁ HIẾN"}, {"code": "TATAMAT0036", "name": "TATAMART GIA TRUNG"}, {"code": "TATAMAT0037", "name": "TATAMART TỨ TRƯNG"}, {"code": "TATAMAT0038", "name": "TATAMART 158 NGUYỄN VĂN LINH"}],
       parse(wb, fileName) { return parseTatamart(this, wb, fileName || ''); }
     }
+
+    ,
+    JMART: pdfAcct('JMART (PDF)', parseJmart, {
+      fixedCustomer: 'JMART0001', customers: [{ code: 'JMART0001', name: 'CÔNG TY CỔ PHẨN THƯƠNG MẠI DỊCH VỤ JM QUỐC TẾ' }]
+    })
 
   };
 
