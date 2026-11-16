@@ -15,6 +15,7 @@ CẤU TRÚC
   Code chuyển đổi: sheet "Barcode Aeon" -> FFM_AEON_MAP; các sheet khác (SATRA, LOTTE…) -> FFM_CONV[tên sheet].
 - app.js: giao diện chuyển đơn, CODE_PREFIX (kiểm tra mã KH team tự khai báo).
 - report.js: Báo cáo List order (tab Team khác) -> "Total PO update dd.mm.yy.xlsx" (mẫu sheet Total = tpl_total.b64).
+- chat.js: đính kèm file trong chat (📎/kéo thả/dán) -> Apps Script upload kind='file' -> Drive "FFM Chat file đính kèm"; tin nhắn lưu "[[f:<id>|<tên>]]" (v61).
 - chat.js / social.js: chat các phòng (tong, donhang, khac) và Sinh hoạt chung qua Apps Script (FFM_API).
 
 QUY TẮC

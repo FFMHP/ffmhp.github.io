@@ -75,9 +75,9 @@
   who.addEventListener('change', syncWho);
 
 
-  // ---- file đính kèm (bản thử: chỉ bật khi window.FFM_CHAT_ATTACH) ----
+  // ---- file đính kèm (bật mặc định; tắt bằng window.FFM_CHAT_ATTACH=false) ----
   // tin nhắn lưu dạng "nội dung\n[[f:<id Drive>|<tên file>]]" (mỗi file 1 dòng)
-  const ATTACH = !!window.FFM_CHAT_ATTACH && /^https:/.test(API);
+  const ATTACH = window.FFM_CHAT_ATTACH !== false && /^https:/.test(API);
   const FILE_RE = /\[\[f:([\w-]{10,})\|([^\]\n]{0,120})\]\]/g;
   const isImg = n => /\.(jpe?g|png|gif|webp|heic)$/i.test(n);
   const icon = n => /\.pdf$/i.test(n) ? '📕' : /\.(xlsx?|xlsm|csv)$/i.test(n) ? '📗' : /\.docx?$/i.test(n) ? '📘' : isImg(n) ? '🖼️' : '📄';
