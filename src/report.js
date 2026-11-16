@@ -82,6 +82,9 @@
       if (!kv && !isHuy) { const k = String(r[C.kho] || '(trống)').trim(); noKv[k] = noKv[k] || { n: 0, v: 0 }; noKv[k].n++; noKv[k].v += o.val; }
       (isHuy ? huy : nat).push(o);
     });
+    // sheet National: 1 số hóa đơn gộp nhiều đơn thì cột Amount lặp lại tổng tiền HĐ ở mọi dòng -> chỉ giữ ở dòng đầu, các dòng sau để trống (như file anh Tài làm tay)
+    const seenInv = new Set(); let dupInv = 0;
+    nat.forEach(o => { const k = String(o.raw[C.inv] || '').trim(); if (!k) return; if (seenInv.has(k)) { o.amt = 0; o.amtDup = true; dupInv++; } else seenInv.add(k); });
     // bảng tổng theo miền
     const CATS = [
       { k: 'gx', label: 'Đơn đã giao hàng và đã xuất HD', f: o => o.daGiao && o.daHD },
@@ -107,7 +110,7 @@
     const T = { nw: table(''), reg: REGIONS.map(r => ({ r, t: table(r) })) };
     const m = (D.to || '').split('/'), mm = m.length === 3 ? `${m[1]}/${m[2]}` : '', prev = m.length === 3 ? (+m[1] === 1 ? `12/${+m[2] - 1}` : `${String(+m[1] - 1).padStart(2, '0')}/${m[2]}`) : '';
     const hdThang = T.nw.tot.a;
-    return { nat, huy, T, noAcc: [...noAcc.entries()], noKv, mm, prev, hdThang, extra, D };
+    return { nat, huy, T, noAcc: [...noAcc.entries()], noKv, mm, prev, hdThang, extra, D, dupInv };
   }
 
   // ---- ghi file Excel: sheet Total lấy nguyên mẫu (định dạng + công thức) từ file Total PO update của anh Tài ----
@@ -165,7 +168,7 @@
       const s = wb.addWorksheet(name, { views: [{ state: 'frozen', ySplit: 2, xSplit: 0 }] });
       s.getRow(1).values = head1; s.getRow(2).values = head2;
       [1, 2].forEach(r => { const row = s.getRow(r); row.height = 42; row.eachCell(c => { c.font = { bold: true, size: 10 }; c.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } }; c.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }; }); });
-      list.forEach((o, i) => { s.getRow(3 + i).values = [o.acc, o.kenh, o.kv || '#N/A', o.daGiao, o.daHD, o.isHuy].concat(keep.map(k => o.raw[k] === undefined || o.raw[k] === null ? '' : o.raw[k])); });
+      list.forEach((o, i) => { s.getRow(3 + i).values = [o.acc, o.kenh, o.kv || '#N/A', o.daGiao, o.daHD, o.isHuy].concat(keep.map(k => (o.amtDup && k === D.C.amt) || o.raw[k] === undefined || o.raw[k] === null ? '' : o.raw[k])); });
       s.columns.forEach((c, i) => { c.width = i < 6 ? 11 : 16; });
       [15, 27].forEach(c => { s.getColumn(c).numFmt = '#,##0'; });
       s.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2 + list.length, column: head1.length } };
@@ -189,7 +192,7 @@
     const sum = el('div', 'rp-kpi');
     const k = (lab, v, sub) => { const d = el('div', 'tile'); d.append(el('small', '', lab), el('b', '', v)); if (sub) d.append(el('small', 'note', sub)); sum.append(d); };
     k('Đơn (không tính hủy)', R.T.nw.tot.n.toLocaleString('vi-VN') + ' đơn', vnd(R.T.nw.tot.v) + ' đ');
-    k('Đã xuất HĐ trong tháng', vnd(R.hdThang) + ' đ');
+    k('Đã xuất HĐ trong tháng', vnd(R.hdThang) + ' đ', R.dupInv ? `số HĐ trùng: chỉ tính 1 dòng (bỏ ${R.dupInv} dòng lặp)` : '');
     k('Chưa giao', (R.T.nw.rows[1].n + R.T.nw.rows[3].n) + ' đơn', fmtTr(R.T.nw.rows[1].v + R.T.nw.rows[3].v));
     k('PO hủy', R.huy.length + ' đơn', fmtTr(R.huy.reduce((s, o) => s + o.val, 0)));
     box.append(sum);
