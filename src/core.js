@@ -930,6 +930,23 @@
     return { fixedPo: true, editable: true, po, customer: acct.fixedCustomer, store: 'JMART 346 Bến Vân Đồn', lines, issues, source: 'pdf' };
   }
 
+  // KKTC: file Excel đơn của 1 cửa hàng, không có cột tên cửa hàng; mã KH ghi ở 1 ô (KKTC0047)
+  function parseKktcOrderSheet(acct, wb, fileName) {
+    const code = findCode(wb, /^\s*(KKTC\d{3,})\s*$/i);
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const hasStoreCol = findHeader(ws, H => H.some(x => x && /cua hang|ten kh|store/.test(x)) ? {} : null);
+    if (!code || hasStoreCol) return null; // không phải mẫu này -> đọc theo cột cửa hàng như cũ
+    const s = parseSimpleSheet(acct, wb, fileName, { bcHead: /barcode|ma vach/, qtyHead: /^so luong|^sl\b/ });
+    if (s.error) return null;
+    const hit = acct.customers.find(c => c.code.toUpperCase() === code);
+    const issues = s.issues;
+    if (hit) issues.push({ key: 'customer', level: 'info', msg: `Mã KH lấy theo mã ghi trên file: ${hit.code} (${hit.name}).` });
+    else issues.push({ key: 'customer', level: 'err', msg: `Mã ${code} ghi trên file không có trong DMKH. Chọn cửa hàng ở ô Mã khách hàng.` });
+    const abbr = hit ? acct.makeAbbr(hit.name).abbr : '';
+    issues.push({ level: 'info', msg: `Đơn Excel 1 cửa hàng: ${s.lines.length} dòng, SL lấy cột "số lượng".` });
+    return { prefix: acct.prefix, seq: acct.seq, abbr, customer: hit ? hit.code : '', store: hit ? hit.name : code, lines: s.lines, issues };
+  }
+
   /* ---------- Account rules ---------- */
   const ACCOUNTS = {
     KKTC: {
@@ -942,7 +959,12 @@
       makeAbbr(store) { return { abbr: key(store, KKTC_BRAND).split(' ').filter(w => w && w !== 'the').join('').toUpperCase().slice(0, 6) }; },
       parse(wb) { return parseStoreColumn(this, wb); },
       async parseFile(f, onProgress, libs) {
-        if (!/\.(jpe?g|png)$/i.test(f.name)) return parseStoreColumn(this, XLSXlib.read(f.buf, { type: 'array', cellText: true }));
+        if (!/\.(jpe?g|png)$/i.test(f.name)) {
+          const wb = XLSXlib.read(f.buf, { type: 'array', cellText: true });
+          // mẫu đơn Excel 1 cửa hàng (góp ý Tiến 17/11): cột "Mã hàng barcode" + "số lượng", mã KH KKTCxxxx ghi sẵn ở 1 ô (vd G3)
+          const one = parseKktcOrderSheet(this, wb, f.name);
+          return one || parseStoreColumn(this, wb);
+        }
         // Ảnh chụp bảng đơn: không có tên cửa hàng -> lấy theo tên file, vẫn cho chọn tay
         try { await libs.ocr(); } catch (e) { return { error: 'Không tải được bộ nhận dạng chữ (cần internet lần đầu).' }; }
         let res;
