@@ -4116,7 +4116,7 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
    Đầu vào: "BẢNG KÊ CHI TIẾT HÓA ĐƠN (TẤT CẢ)" xuất từ phần mềm (vd 18112026143407PM.xlsx), 1 hoặc nhiều file.
    Quy tắc (suy từ "File final up DMS.xls", NPP Minh Tuấn Kiệt 06-17/11/2026):
    - Chỉ lấy Loại phiếu "Xuất bán KH" và "Xuất khuyến mãi" đã có số HĐ; bỏ đổi trả, hàng mẫu, xuất khác, hủy combo, "Chưa xuất HĐ".
-   - Mã KH bỏ đuôi "HP" (TUANKIET001HP -> TUANKIET001). Mặc định chỉ hiện khách tên "NPP …".
+   - Mã KH bỏ đuôi "HP" (TUANKIET001HP -> TUANKIET001). Mặc định chỉ xuất 7 NPP up DMS (DMS_KH / DMS_TEN bên dưới).
    - Dòng KM = "Xuất khuyến mãi" (hoặc số đơn "KM-…"). Số đơn KM bỏ tiền tố "KM-" để ghép với đơn bán.
    - Gộp KM vào hóa đơn bán cùng số đơn: cộng số lượng theo Mã vật tư + LOT + Ngày hết hạn.
      Số HĐ, ngày HĐ, ngày phiếu xuất, ngày đặt hàng lấy của hóa đơn bán.
@@ -4140,6 +4140,10 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
   };
   const r4 = x => Math.round(x * 10000) / 10000;
   const HEAD = ['Số TT', 'Loại phiếu', 'Ngày phiếu xuất', 'Mã phiếu xuất', 'Mã phiếu đề xuất', 'Ngày hóa đơn', 'Số hóa đơn', 'Mã KH / NCC\n(Customer Code / Vendor Code)', 'Tên KH 2 / NCC', 'Tên KH / NCC\n(Customer Name / Vendor Name)', 'Mã chủ hàng', 'Tên chủ hàng', 'Chi nhánh', 'Diễn giải\n(Description)', 'Mã vật tư\n(Goods Code)', 'BarCode', 'Tên vật tư\n(Goods Name)', 'Tên tiếng Anh\nEnglish Name)', 'Đơn vị\n(Unit)', 'Số lượng\n(Quantily)', 'Giá bán\n(Price)', 'Tiền hàng\n(Sub Total)', 'Tiền CK\n(Discount)', 'Tiền thuế\n(VAT)', 'Tồng tiền tt\n(Grand Total)', '', '', 'Mã kho\n(Warehouse Code)', 'Nhóm vật tư chính (Goods KeyGroup)', 'Nhóm vật tư phụ 1 - (Goods SubGroup1)', 'Nhóm vật tư phụ 2 - (Goods SubGroup2)', 'Nhóm vật tư phụ 3 - (Goods SubGroup3)', 'LOT', 'HSD', 'Ngày SX (Manufactur Date)', 'Ngày hết hạn (Expiry Date)', 'Số đơn đặt hàng', 'Ngày đặt hàng', 'Diễn giải', 'Mã Phiếu đề xuất của HP/ RW', 'Tổng số lượng trả lại', 'Giá trị trả lại', 'Giá trị giảm giá', 'Mã nhóm khách hàng', 'Scheme'];
+  // 7 NPP up DMS (anh Tài chốt 18/11/2026): theo mã KH, hoặc tên KH có chữ tương ứng
+  const DMS_KH = ['DD00008', 'TUANKIET001', 'DD00003', 'KINGBAC0001', 'NQKHUE0002', 'DD00010', 'DD00011'];
+  const DMS_TEN = ['hoang huy phat', 'tuan kiet', 'an phat', 'kinh bac', 'quynh phat', 'ngoc an khang', 'thao huong tra'];
+  const isDms = (kh, o) => DMS_KH.includes(String(kh).toUpperCase()) || DMS_TEN.some(t => new RegExp('(^|[^a-z])' + t + '($|[^a-z])').test(fold(o.kh2 + ' | ' + o.tkh)));
   let files = [], R = null;
 
   const drop = $('dmDrop'), pick = $('dmFile');
@@ -4238,7 +4242,7 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
       d.sale.forEach(o => add(o, false));
       d.km.forEach(o => add(o, !!d.sale.length));
       const ckOrder = d.sale.length ? r4(d.sale[0].th ? d.sale[0].ck / d.sale[0].th : 0) : 0;
-      let n = npps.get(d.kh); if (!n) npps.set(d.kh, n = { kh: d.kh, ten: head.kh2 || head.tkh, isNpp: /^npp/.test(fold(head.kh2 || head.tkh)), rows: [], orders: [], bad: 0 });
+      let n = npps.get(d.kh); if (!n) npps.set(d.kh, n = { kh: d.kh, ten: head.kh2 || head.tkh, isNpp: isDms(d.kh, head), rows: [], orders: [], bad: 0 });
       items.forEach(it => {
         const o = it.base;
         if (!it.gia) {
@@ -4292,7 +4296,7 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
   function fillKh() {
     const sel = $('dmKh'), cur = sel.value; sel.innerHTML = '';
     const nNpp = R.npps.filter(n => n.isNpp).length;
-    [['npp', `Chỉ khách NPP (${nNpp})`], ['*', `Tất cả khách (${R.npps.length})`]].concat(R.npps.map(n => [n.kh, `${n.kh} · ${n.ten}`])).forEach(([v, t]) => { const o = el('option', '', t); o.value = v; sel.append(o); });
+    [['npp', `7 NPP up DMS (${nNpp} có trong file)`], ['*', `Tất cả khách (${R.npps.length})`]].concat(R.npps.map(n => [n.kh, `${n.kh} · ${n.ten}`])).forEach(([v, t]) => { const o = el('option', '', t); o.value = v; sel.append(o); });
     sel.value = [...sel.options].some(o => o.value === cur) ? cur : (nNpp ? 'npp' : '*');
   }
   function show() {
