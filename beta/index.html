@@ -578,7 +578,7 @@ button.danger{color:var(--err);border-color:var(--err)}
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 18/11/2026 · v69</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 18/11/2026 · v70</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
@@ -1903,6 +1903,49 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
     if (!hit) issues.push({ key: 'customer', level: 'err', msg: 'Chọn cửa hàng Wefresh ở ô Mã khách hàng (rồi bấm Ghi nhớ).' });
     return { fixedPo: true, editable: true, po, customer: hit ? hit.code : '', store: addr ? 'Wefresh ' + addr.replace(/^\d+\s*/, '') : 'Wefresh', lines, issues, source: 'pdf' };
   }
+  // Wefresh Excel (góp ý Ngân 18/11): tiêu đề [STT | Mã vật tư | BarCode | Tên vật tư | Đặt | WEFRESHxxxx | tên cửa hàng]
+  // product code = cột "Mã vật tư" (B, có hậu tố G/R/O/W tách màu cùng barcode) · SL = cột "Đặt" (E) · mã KH = ô ghi WEFRESHxxxx (F1)
+  function parseWefreshExcel(acct, wb, fileName) {
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const h = findHeader(ws, H => {
+      const p = H.findIndex(x => x && /^ma vat tu$|^ma hang$|^product code$/.test(x)), q = H.findIndex(x => x && /^dat$|^sl dat|^so luong/.test(x));
+      return p >= 0 && q >= 0 ? { cPc: p, cQty: q, cBc: H.findIndex(x => x && /barcode|ma vach/.test(x)), cName: H.findIndex(x => x && /^ten/.test(x)) } : null;
+    });
+    if (!h) return { error: 'Không thấy dòng tiêu đề có cột "Mã vật tư" và cột "Đặt". File này có đúng mẫu đơn Excel Wefresh không?' };
+    const issues = [], lines = [];
+    const all = root.FFM_PC ? Object.values(root.FFM_PC).flat() : [];
+    const known = new Set(all.map(x => x[0]));
+    for (let r = h.row + 1; r <= h.range.e.r; r++) {
+      let pc = cellText(ws, r, h.cPc).trim().toUpperCase();
+      const bc = h.cBc >= 0 ? cellText(ws, r, h.cBc).replace(/\D/g, '') : '', q = cellNum(ws, r, h.cQty);
+      if (!pc && !bc) continue;
+      if (q == null || q === 0) continue;
+      const ln = { row: r + 1, barcode: bc, productCode: pc, qty: q, flags: [] };
+      if ((!pc || (known.size && !known.has(pc))) && bc && root.FFM_PC && root.FFM_PC[bc.padStart(14, '0')]) {
+        const c = root.FFM_PC[bc.padStart(14, '0')];
+        if (c.length === 1) { ln.flags.push({ level: 'warn', msg: `Mã vật tư "${pc || '(trống)'}" không có trong DMSP; lấy theo barcode: ${c[0][0]}. Kiểm tra lại.` }); ln.productCode = pc = c[0][0]; }
+      }
+      if (!pc) ln.flags.push({ level: 'err', msg: 'Thiếu Mã vật tư (product code)' });
+      else if (known.size && !known.has(pc)) ln.flags.push({ level: 'warn', msg: `Product code ${pc} không có trong DMSP. Kiểm tra lại mã.` });
+      if (Number.isNaN(q)) ln.flags.push({ level: 'err', msg: `Số lượng không phải số: "${cellText(ws, r, h.cQty)}"` });
+      else if (q < 0 || !Number.isInteger(q)) ln.flags.push({ level: 'err', msg: 'Số lượng âm hoặc lẻ thập phân' });
+      const dm = pc ? (all.find(x => x[0] === pc) || [])[1] : '';
+      ln.name = `${pc || '?'} · ${dm || (h.cName >= 0 ? norm(cellText(ws, r, h.cName)) : '')}`;
+      lines.push(ln);
+    }
+    const seen = {};
+    lines.forEach(l => { if (l.productCode) { if (seen[l.productCode]) l.flags.push({ level: 'warn', msg: `Trùng Product code với dòng ${seen[l.productCode]}` }); else seen[l.productCode] = l.row; } });
+    if (!lines.length) issues.push({ level: 'err', msg: 'Không có dòng nào có số lượng đặt hàng.' });
+    const code = findCode(wb, /^\s*(WEFRESH\d{3,})\s*$/i);
+    const hit = code ? acct.customers.find(c => c.code.toUpperCase() === code) : (acct.customers.length === 1 ? acct.customers[0] : null);
+    if (code && hit) issues.push({ key: 'customer', level: 'info', msg: `Mã KH lấy theo mã ghi trên file: ${hit.code} (${hit.name}).` });
+    else if (code) issues.push({ key: 'customer', level: 'err', msg: `Mã ${code} ghi trên file không có trong DMKH. Chọn cửa hàng ở ô Mã khách hàng.` });
+    else if (hit) issues.push({ key: 'customer', level: 'warn', msg: `File không ghi mã KH; lấy cửa hàng duy nhất: ${hit.code} (${hit.name}). Kiểm tra lại.` });
+    else issues.push({ key: 'customer', level: 'err', msg: 'File không ghi mã KH (WEFRESHxxxx). Chọn cửa hàng ở ô Mã khách hàng.' });
+    const sum = lines.reduce((s, l) => s + (l.qty || 0), 0);
+    issues.push({ level: 'info', msg: `Đơn Excel Wefresh: ${lines.length} dòng, tổng SL ${sum}. Product code lấy cột "Mã vật tư", SL lấy cột "Đặt". File Excel không có số đơn: số đơn = WEFRESH + ngày về đơn.` });
+    return { prefix: acct.prefix, seq: acct.seq, abbr: '', noAbbr: true, pcMode: true, customer: hit ? hit.code : (code || ''), store: hit ? hit.name : (code || 'Wefresh'), lines, issues };
+  }
 
 
   /* ================= đợt 4 (13/11 chiều): Kids Plaza, Korea PT, LMLUONG, Tatamart ================= */
@@ -2397,8 +2440,16 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
       customers: [{"code": "TOP5_MART_001", "name": "TOP5_MART Yên Phụ"}],
       parse(wb) { return storeSheetAcct(this, wb); }
     },
-    WEFRESH: pdfAcct('Wefresh (PDF)', parseWefresh, {
-      customers: [{"code": "WEFRESH0001", "name": "WEFRESH_174 Thái Hà"}]
+    WEFRESH: pdfAcct('Wefresh (PDF hoặc Excel)', parseWefresh, {
+      prefix: 'WEFRESH', seq: 'dup', accept: '.pdf,.xlsx,.xls',
+      customers: [{"code": "WEFRESH0001", "name": "WEFRESH_174 Thái Hà"}],
+      async parseFile(f, onProgress, libs) {
+        if (/\.xlsx?$/i.test(f.name)) return parseWefreshExcel(this, XLSXlib.read(f.buf, { type: 'array', cellText: true }), f.name);
+        if (!/\.pdf$/i.test(f.name)) return { error: 'Account này nhận file PDF hoặc Excel.' };
+        try { await libs.pdf(); } catch (e) { return { error: 'Không tải được bộ đọc PDF (cần internet).' }; }
+        onProgress && onProgress('Đang đọc PDF…');
+        return parseWefresh(this, await root.FUJI.pdfItems(f.buf), f.name);
+      }
     })
 
     ,
@@ -3965,8 +4016,7 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
   route();
   schedule();
 })();
-</script>
-<script>
+</script><script>
 /* Team khác › Chuyển đổi file up DMS (team Đơn hàng GT). Bản chính từ v67.
    Đầu vào: "BẢNG KÊ CHI TIẾT HÓA ĐƠN (TẤT CẢ)" xuất từ phần mềm (vd 18112026143407PM.xlsx), 1 hoặc nhiều file.
    Quy tắc (suy từ "File final up DMS.xls", NPP Minh Tuấn Kiệt 06-17/11/2026):
