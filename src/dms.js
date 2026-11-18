@@ -146,7 +146,7 @@
           else { it.ckr = 0; it.vr = 0; }
         }
         const sl = it.slBan + it.slKm, th = sl * it.gia, ck = th * it.ckr, vat = (th - ck) * it.vr;
-        n.rows.push({ o, sl, gia: it.gia, th, ck, vat, tt: th - ck + vat, bad: !!it.bad, so: d.so });
+        n.rows.push({ o, sl, gia: it.gia, th, ck, vat, tt: th - ck + vat, bad: !!it.bad, so: d.so, hd: d.sale.length && kmHd.length && o.hd === main.hd ? [main.hd].concat(kmHd).join(", ") : o.hd });
       });
       n.orders.push({ npp: head.kh2 || head.tkh, so: d.so, kmSo: d.km.length && /^KM/i.test(d.km[0].soRaw) ? d.km[0].soRaw : 'KM-' + d.so, kmHd: kmHd.join(', '), slKm: d.km.reduce((s, o) => s + o.sl, 0), hd: saleHd.join(', '), slBan: d.sale.reduce((s, o) => s + o.sl, 0) });
     });
@@ -157,7 +157,7 @@
     const aoa = [HEAD];
     [].concat(n).flatMap(m => m.rows).forEach((x, i) => {
       const o = x.o;
-      aoa.push([i + 1, o.loai, o.npx, '', '', o.nhd, o.hd, o.kh, o.kh2, o.tkh, o.mch, o.tch, o.cn, '', o.mvt, o.bc, o.ten, o.en, o.dv,
+      aoa.push([i + 1, o.loai, o.npx, '', '', o.nhd, x.hd, o.kh, o.kh2, o.tkh, o.mch, o.tch, o.cn, '', o.mvt, o.bc, o.ten, o.en, o.dv,
         x.sl, x.gia, x.th, x.ck, x.vat, x.tt, '', '', o.kho, o.g0, o.g1, o.g2, o.g3, o.lot, o.hsd, o.nsx, o.nhh, x.so, o.ndh, '', '', '', '', '', '', '']);
     });
     return aoa;
@@ -228,7 +228,7 @@
       const tb2 = el('table'), th2 = el('tr');
       ['#', 'Số HĐ', 'Số đơn', 'Mã vật tư', 'Tên vật tư', 'LOT', 'Hết hạn', 'SL', 'Giá bán', 'Tiền CK', 'VAT', 'Tổng tiền tt'].forEach(x => th2.append(el('th', '', x)));
       tb2.append(th2);
-      n.rows.forEach((x, j) => { const tr = el('tr', x.bad ? 'err' : ''); [j + 1, x.o.hd, x.so, x.o.mvt, x.o.ten, x.o.lot, x.o.nhh, x.sl, vnd(x.gia), vnd(x.ck), vnd(x.vat), vnd(x.tt)].forEach((v, c) => tr.append(el('td', c >= 7 ? 'n' : '', typeof v === 'number' ? v.toLocaleString('vi-VN') : v))); tb2.append(tr); });
+      n.rows.forEach((x, j) => { const tr = el('tr', x.bad ? 'err' : ''); [j + 1, x.hd, x.so, x.o.mvt, x.o.ten, x.o.lot, x.o.nhh, x.sl, vnd(x.gia), vnd(x.ck), vnd(x.vat), vnd(x.tt)].forEach((v, c) => tr.append(el('td', c >= 7 ? 'n' : '', typeof v === 'number' ? v.toLocaleString('vi-VN') : v))); tb2.append(tr); });
       const sc2 = el('details', 'rp-more'); sc2.append(el('summary', '', `Xem trước ${n.rows.length} dòng file up`));
       const w2 = el('div', 'tbl-scroll rp-tbl'); w2.append(tb2); sc2.append(w2); d.append(sc2);
       list.append(d);
