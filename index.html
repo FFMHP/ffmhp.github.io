@@ -553,7 +553,7 @@ button.danger{color:var(--err);border-color:var(--err)}
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 18/11/2026 · v67</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 18/11/2026 · v68</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
@@ -4097,9 +4097,9 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
     return { npps: [...npps.values()], warn, lines: lines.length };
   }
 
-  function toAoa(n) {
+  function toAoa(n) { // n: 1 NPP hoặc mảng NPP (gộp 1 sheet, STT chạy liên tục)
     const aoa = [HEAD];
-    n.rows.forEach((x, i) => {
+    [].concat(n).flatMap(m => m.rows).forEach((x, i) => {
       const o = x.o;
       aoa.push([i + 1, o.loai, o.npx, '', '', o.nhd, o.hd, o.kh, o.kh2, o.tkh, o.mch, o.tch, o.cn, '', o.mvt, o.bc, o.ten, o.en, o.dv,
         x.sl, x.gia, x.th, x.ck, x.vat, x.tt, '', '', o.kho, o.g0, o.g1, o.g2, o.g3, o.lot, o.hsd, o.nsx, o.nhh, x.so, o.ndh, '', '', '', '', '', '', '']);
@@ -4120,7 +4120,7 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
   const save = (blob, name) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); };
   function logDm(d) {
     const API = window.FFM_API; if (!/^https:/.test(API || '')) return;
-    try { fetch(API, { method: 'POST', mode: 'no-cors', keepalive: true, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ team: 'khac', user: (($('who') || {}).value || '').trim(), acct: 'UP DMS', files: files.length, ver: (($('ver') || {}).textContent || '').replace('Phiên bản ', '') + ' beta' }, d)) }).catch(() => {}); } catch (e) {}
+    try { fetch(API, { method: 'POST', mode: 'no-cors', keepalive: true, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ team: 'khac', user: (($('who') || {}).value || '').trim(), acct: 'UP DMS', files: files.length, ver: (($('ver') || {}).textContent || '').replace('Phiên bản ', '') }, d)) }).catch(() => {}); } catch (e) {}
   }
 
   // ---- hiển thị: cảnh báo + nút tải ở đầu, rồi từng NPP ----
@@ -4177,8 +4177,8 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
       const w2 = el('div', 'tbl-scroll rp-tbl'); w2.append(tb2); sc2.append(w2); d.append(sc2);
       list.append(d);
     });
-    $('dmAll').hidden = NS.length < 2;
-    $('dmAll').textContent = `⬇ Tải tất cả (${NS.length} file, .zip)`;
+    $('dmAll').hidden = !NS.length;
+    $('dmAll').textContent = `⬇ Tải 1 file gộp ${NS.length} NPP (.xls)`;
   }
   $('dmKh').addEventListener('change', () => R && show());
   // dán vào UP WEB 2026: NPP DD | SỐ PO KM | Số HĐ KM | SL KM | SỐ PO BÁN | SỐ HD BÁN | GIÁ TRỊ | DEALINE | GIỜ | SL BÁN | NOTE | dò số HĐ | | SL UP | HĐ UP
@@ -4204,10 +4204,11 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
   };
   $('dmAll').onclick = async () => {
     if (!R) return;
-    const zip = new JSZip(); shown().forEach(n => zip.file(fileName(n), toXls(n)));
-    const t = new Date();
-    save(await zip.generateAsync({ type: 'blob' }), `File up DMS ${p2(t.getDate())}.${p2(t.getMonth() + 1)}.zip`);
-    logDm({ event: 'Tải file up DMS (zip)', orders: R.npps.length });
+    // 1 file .xls, 1 sheet Import gộp tất cả NPP đang chọn
+    const NS = shown(), t = new Date();
+    const name = `File up DMS ${p2(t.getDate())}.${p2(t.getMonth() + 1)}.${String(t.getFullYear()).slice(2)}.xls`;
+    save(toXls(NS), name);
+    logDm({ event: 'Tải file up DMS (gộp)', orders: NS.reduce((s, n) => s + n.orders.length, 0), names: `${name} | ${NS.length} NPP, ${NS.reduce((s, n) => s + n.rows.length, 0)} dòng` });
   };
   // ---- danh sách NPP up DMS + thêm tay ----
   const BASE = [['DD00008', 'NPP Hoàng Huy Phát'], ['TUANKIET001', 'NPP Minh Tuấn Kiệt'], ['DD00003', 'NPP An Phát'], ['KINGBAC0001', 'NPP Kinh Bắc'], ['', 'NPP Quỳnh Phát'], ['DD00010', 'NPP Ngọc An Khang'], ['DD00011', 'NPP Thảo Hương Trà']];
@@ -4229,7 +4230,7 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
     window.FFM_CUST_SHARED = (window.FFM_CUST_SHARED || []).concat([{ acct: 'DMS', code, name }]);
     try { localStorage.setItem('ffm-data-v1:custShared', JSON.stringify(window.FFM_CUST_SHARED)); } catch (e) {}
     let ok = true;
-    try { await fetch(window.FFM_API, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ team: 'khac', user: who, event: 'Thêm mã KH mới', acct: 'DMS', code, store: name, ver: (($('ver') || {}).textContent || '').replace('Phiên bản ', '') + ' beta' }) }); } catch (e) { ok = false; }
+    try { await fetch(window.FFM_API, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ team: 'khac', user: who, event: 'Thêm mã KH mới', acct: 'DMS', code, store: name, ver: (($('ver') || {}).textContent || '').replace('Phiên bản ', '') }) }); } catch (e) { ok = false; }
     btn.disabled = false; btn.textContent = 'Lưu vào bảng chung';
     $('dmAddCode').value = ''; $('dmAddName').value = '';
     note.textContent = ok ? `Đã thêm ${name} (${code}). Từ giờ file up DMS xuất cả NPP này.` : 'Chưa lưu lên bảng chung được (mất mạng?). Máy này vẫn nhớ, thử lại sau.';
