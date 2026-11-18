@@ -7,6 +7,16 @@
       <div><b id="dmName">Kéo thả file chi tiết hóa đơn vào đây</b><small>hoặc bấm để chọn file .xlsx / .xls · được chọn nhiều file</small></div>
     </div>
     <input type="file" id="dmFile" accept=".xlsx,.xls" multiple hidden>
+    <details class="rp-more" id="dmAddBox">
+      <summary>+ Thêm NPP up DMS <span id="dmNppCount"></span></summary>
+      <p class="note" id="dmNppList" style="margin:6px 0"></p>
+      <div class="rp-fix">
+        <input type="text" id="dmAddCode" placeholder="Mã KH (vd C100061)" autocomplete="off">
+        <input type="text" id="dmAddName" placeholder="Tên NPP (vd NPP Nguyên Hậu)" autocomplete="off" style="width:220px">
+        <button type="button" class="small" id="dmAddBtn">Lưu vào bảng chung</button>
+      </div>
+      <p class="note" id="dmAddNote" style="margin:4px 0 0">Lưu ở sheet "Mã KH" (account DMS) trong Google Sheet "FFM Chuyển Đơn - Thống kê", cả team dùng chung. Muốn bỏ một NPP thì xoá dòng đó trong sheet.</p>
+    </details>
     <div class="rp-act">
       <button type="button" class="primary" id="dmGo" disabled>Chuyển đổi</button>
       <button type="button" class="primary" id="dmAll" hidden>⬇ Tải tất cả</button>

@@ -29,7 +29,10 @@
   // 7 NPP up DMS (anh Tài chốt 18/11/2026): theo mã KH, hoặc tên KH có chữ tương ứng
   const DMS_KH = ['DD00008', 'TUANKIET001', 'DD00003', 'KINGBAC0001', 'NQKHUE0002', 'DD00010', 'DD00011'];
   const DMS_TEN = ['hoang huy phat', 'tuan kiet', 'an phat', 'kinh bac', 'quynh phat', 'ngoc an khang', 'thao huong tra'];
-  const isDms = (kh, o) => DMS_KH.includes(String(kh).toUpperCase()) || DMS_TEN.some(t => new RegExp('(^|[^a-z])' + t + '($|[^a-z])').test(fold(o.kh2 + ' | ' + o.tkh)));
+  // NPP team tự thêm: lưu chung sheet "Mã KH" (Apps Script, event "Thêm mã KH mới", acct = "DMS"), đọc lại qua ?t=aeonmap -> cust
+  const normKh = c => String(c || '').trim().toUpperCase().replace(/HP$/, '');
+  const added = () => (window.FFM_CUST_SHARED || []).filter(x => x.acct === 'DMS');
+  const isDms = (kh, o) => DMS_KH.includes(String(kh).toUpperCase()) || added().some(x => normKh(x.code) === String(kh).toUpperCase()) || DMS_TEN.some(t => new RegExp('(^|[^a-z])' + t + '($|[^a-z])').test(fold(o.kh2 + ' | ' + o.tkh)));
   let files = [], R = null;
 
   const drop = $('dmDrop'), pick = $('dmFile');
@@ -128,7 +131,7 @@
       d.sale.forEach(o => add(o, false));
       d.km.forEach(o => add(o, !!d.sale.length));
       const ckOrder = d.sale.length ? r4(d.sale[0].th ? d.sale[0].ck / d.sale[0].th : 0) : 0;
-      let n = npps.get(d.kh); if (!n) npps.set(d.kh, n = { kh: d.kh, ten: head.kh2 || head.tkh, isNpp: isDms(d.kh, head), rows: [], orders: [], bad: 0 });
+      let n = npps.get(d.kh); if (!n) npps.set(d.kh, n = { kh: d.kh, ten: head.kh2 || head.tkh, head, isNpp: isDms(d.kh, head), rows: [], orders: [], bad: 0 });
       items.forEach(it => {
         const o = it.base;
         if (!it.gia) {
@@ -180,9 +183,10 @@
   // khách đang chọn: mặc định chỉ khách tên "NPP …"
   const shown = () => { const v = $('dmKh').value; return R.npps.filter(n => v === '*' ? true : v === 'npp' ? n.isNpp : n.kh === v); };
   function fillKh() {
+    R.npps.forEach(n => { n.isNpp = isDms(n.kh, n.head); });
     const sel = $('dmKh'), cur = sel.value; sel.innerHTML = '';
     const nNpp = R.npps.filter(n => n.isNpp).length;
-    [['npp', `7 NPP up DMS (${nNpp} có trong file)`], ['*', `Tất cả khách (${R.npps.length})`]].concat(R.npps.map(n => [n.kh, `${n.kh} · ${n.ten}`])).forEach(([v, t]) => { const o = el('option', '', t); o.value = v; sel.append(o); });
+    [['npp', `NPP up DMS (${nNpp} có trong file)`], ['*', `Tất cả khách (${R.npps.length})`]].concat(R.npps.map(n => [n.kh, `${n.kh} · ${n.ten}`])).forEach(([v, t]) => { const o = el('option', '', t); o.value = v; sel.append(o); });
     sel.value = [...sel.options].some(o => o.value === cur) ? cur : (nNpp ? 'npp' : '*');
   }
   function show() {
@@ -250,7 +254,7 @@
       $('dmOut').hidden = false; show();
       const NS = shown(), nErr = R.warn.filter(w => w.lv === 'err' && NS.some(n => n.kh === w.kh)).length;
       $('dmMsg').textContent = `Xong: ${NS.length} khách, ${NS.reduce((s, n) => s + n.rows.length, 0)} dòng file up.` + (nErr ? ` Có ${nErr} lỗi cần sửa (ô đỏ ở trên).` : '');
-      logDm({ event: 'Chuyển đổi file up DMS', orders: R.npps.reduce((s, n) => s + n.orders.length, 0), ok: nErr ? 0 : 1, err: nErr, names: files.map(f => f.name).join(', ').slice(0, 200) });
+      logDm({ event: 'Chuyển đổi file up DMS', orders: NS.reduce((s, n) => s + n.orders.length, 0), ok: nErr ? 0 : 1, err: nErr, names: files.map(f => f.name).join(', ').slice(0, 200) });
     } catch (e) { $('dmMsg').textContent = '❌ ' + (e.message || e); $('dmOut').hidden = true; $('dmAll').hidden = true; R = null; logDm({ event: 'Chuyển đổi file up DMS', ok: 0, err: 1, names: String(e.message || e).slice(0, 150) }); }
     finally { btn.disabled = false; }
   };
@@ -260,6 +264,32 @@
     const t = new Date();
     save(await zip.generateAsync({ type: 'blob' }), `File up DMS ${p2(t.getDate())}.${p2(t.getMonth() + 1)}.zip`);
     logDm({ event: 'Tải file up DMS (zip)', orders: R.npps.length });
+  };
+  // ---- danh sách NPP up DMS + thêm tay ----
+  const BASE = [['DD00008', 'NPP Hoàng Huy Phát'], ['TUANKIET001', 'NPP Minh Tuấn Kiệt'], ['DD00003', 'NPP An Phát'], ['KINGBAC0001', 'NPP Kinh Bắc'], ['', 'NPP Quỳnh Phát'], ['DD00010', 'NPP Ngọc An Khang'], ['DD00011', 'NPP Thảo Hương Trà']];
+  function nppList() {
+    const extra = added().filter(x => !DMS_KH.includes(normKh(x.code)));
+    $('dmNppCount').textContent = `(${BASE.length + extra.length} NPP)`;
+    $('dmNppList').textContent = 'Đang xuất: ' + BASE.map(([c, t]) => t + (c ? ` (${c})` : '')).concat(extra.map(x => `${x.name} (${normKh(x.code)}, team thêm)`)).join(', ') + '.';
+  }
+  try { if (!window.FFM_CUST_SHARED) { const c = JSON.parse(localStorage.getItem('ffm-data-v1:custShared') || 'null'); if (c) window.FFM_CUST_SHARED = c; } } catch (e) {}
+  nppList();
+  if (/^https:/.test(window.FFM_API || '')) fetch(window.FFM_API + '?t=aeonmap', { cache: 'no-store' }).then(r => r.json()).then(j => { if (j && j.cust) { window.FFM_CUST_SHARED = j.cust; nppList(); if (R) { fillKh(); show(); } } }).catch(() => {});
+  $('dmAddBtn').onclick = async () => {
+    const code = normKh($('dmAddCode').value), name = $('dmAddName').value.trim(), who = (($('who') || {}).value || '').trim(), note = $('dmAddNote');
+    if (!who) { note.textContent = 'Nhập tên của bạn (góc trên bên phải) trước khi lưu.'; window.FFM_askName && window.FFM_askName(); return; }
+    if (!/^[A-Z0-9_.-]{3,}$/.test(code)) { note.textContent = 'Nhập Mã KH như trong file bảng kê (vd C100061 hoặc C100061HP).'; return; }
+    if (name.length < 3) { note.textContent = 'Nhập tên NPP.'; return; }
+    if (DMS_KH.includes(code) || added().some(x => normKh(x.code) === code)) { note.textContent = `${code} đã có trong danh sách.`; return; }
+    const btn = $('dmAddBtn'); btn.disabled = true; btn.textContent = 'Đang lưu…';
+    window.FFM_CUST_SHARED = (window.FFM_CUST_SHARED || []).concat([{ acct: 'DMS', code, name }]);
+    try { localStorage.setItem('ffm-data-v1:custShared', JSON.stringify(window.FFM_CUST_SHARED)); } catch (e) {}
+    let ok = true;
+    try { await fetch(window.FFM_API, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ team: 'khac', user: who, event: 'Thêm mã KH mới', acct: 'DMS', code, store: name, ver: (($('ver') || {}).textContent || '').replace('Phiên bản ', '') + ' beta' }) }); } catch (e) { ok = false; }
+    btn.disabled = false; btn.textContent = 'Lưu vào bảng chung';
+    $('dmAddCode').value = ''; $('dmAddName').value = '';
+    note.textContent = ok ? `Đã thêm ${name} (${code}). Từ giờ file up DMS xuất cả NPP này.` : 'Chưa lưu lên bảng chung được (mất mạng?). Máy này vẫn nhớ, thử lại sau.';
+    nppList(); if (R) { fillKh(); show(); }
   };
   window.FFM_dms = { readFile, convert, toAoa }; // để kiểm tra
 })();
