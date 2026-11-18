@@ -578,7 +578,7 @@ button.danger{color:var(--err);border-color:var(--err)}
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 18/11/2026 · v68</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 18/11/2026 · v69</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
@@ -4211,6 +4211,7 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
 
   $('dmGo').onclick = async () => {
     if (!files.length) return;
+    if (!(($('who') || {}).value || '').trim()) { $('dmMsg').textContent = 'Nhập tên của bạn (góc trên bên phải) trước khi chuyển đổi.'; window.FFM_askName && window.FFM_askName(); return; }
     const btn = $('dmGo'); btn.disabled = true; $('dmMsg').textContent = 'Đang đọc file…';
     try {
       let lines = [], skip = {}, noHd = 0;

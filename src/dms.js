@@ -242,6 +242,7 @@
 
   $('dmGo').onclick = async () => {
     if (!files.length) return;
+    if (!(($('who') || {}).value || '').trim()) { $('dmMsg').textContent = 'Nhập tên của bạn (góc trên bên phải) trước khi chuyển đổi.'; window.FFM_askName && window.FFM_askName(); return; }
     const btn = $('dmGo'); btn.disabled = true; $('dmMsg').textContent = 'Đang đọc file…';
     try {
       let lines = [], skip = {}, noHd = 0;
