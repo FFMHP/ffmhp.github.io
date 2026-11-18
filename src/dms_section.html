@@ -1,0 +1,20 @@
+  <section class="panel rp gh" aria-labelledby="dmTitle">
+    <p class="gh-beta">🧪 Bản thử, chưa có trên bản chính thức</p>
+    <h2 id="dmTitle">🧾 Chuyển đổi file up DMS</h2>
+    <p class="note">Kéo thả file <b>chi tiết hóa đơn xuất bán</b> xuất từ phần mềm (dạng sheet "data" của MẪU IMP), được chọn nhiều file. Web gộp hàng KM vào hóa đơn bán cùng số đơn, tính tiền theo giá bán và làm file <b>.xls</b> đúng mẫu import DMS (sheet Import, 45 cột), mỗi NPP một file. File chỉ xử lý trên máy bạn.</p>
+    <div class="drop" id="dmDrop" tabindex="0" role="button" aria-label="Chọn hoặc kéo thả file chi tiết hóa đơn">
+      <span class="team-ic" aria-hidden="true">📄</span>
+      <div><b id="dmName">Kéo thả file chi tiết hóa đơn vào đây</b><small>hoặc bấm để chọn file .xlsx / .xls · được chọn nhiều file</small></div>
+    </div>
+    <input type="file" id="dmFile" accept=".xlsx,.xls" multiple hidden>
+    <div class="rp-act">
+      <button type="button" class="primary" id="dmGo" disabled>Chuyển đổi</button>
+      <button type="button" class="primary" id="dmAll" hidden>⬇ Tải tất cả</button>
+      <span class="note" id="dmMsg" role="status" aria-live="polite"></span>
+    </div>
+    <div id="dmOut" hidden>
+      <ul class="issues" id="dmWarn" style="margin:12px 0 0"></ul>
+      <div class="rp-kpi" id="dmKpi"></div>
+      <div id="dmList"></div>
+    </div>
+  </section>
