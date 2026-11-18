@@ -1,7 +1,9 @@
 /* BẢN THỬ (beta) · Team khác › Chuyển đổi file up DMS (team Đơn hàng GT).
-   Đầu vào: file chi tiết hóa đơn xuất bán từ phần mềm (dạng sheet "data" của MẪU IMP), 1 hoặc nhiều file.
+   Đầu vào: "BẢNG KÊ CHI TIẾT HÓA ĐƠN (TẤT CẢ)" xuất từ phần mềm (vd 18112026143407PM.xlsx), 1 hoặc nhiều file.
    Quy tắc (suy từ "File final up DMS.xls", NPP Minh Tuấn Kiệt 06-17/11/2026):
-   - Dòng KM = giá 0 (hoặc số đơn "KM-…"). Số đơn KM bỏ tiền tố "KM-" để ghép với đơn bán.
+   - Chỉ lấy Loại phiếu "Xuất bán KH" và "Xuất khuyến mãi" đã có số HĐ; bỏ đổi trả, hàng mẫu, xuất khác, hủy combo, "Chưa xuất HĐ".
+   - Mã KH bỏ đuôi "HP" (TUANKIET001HP -> TUANKIET001). Mặc định chỉ hiện khách tên "NPP …".
+   - Dòng KM = "Xuất khuyến mãi" (hoặc số đơn "KM-…"). Số đơn KM bỏ tiền tố "KM-" để ghép với đơn bán.
    - Gộp KM vào hóa đơn bán cùng số đơn: cộng số lượng theo Mã vật tư + LOT + Ngày hết hạn.
      Số HĐ, ngày HĐ, ngày phiếu xuất, ngày đặt hàng lấy của hóa đơn bán.
    - Tiền tính lại theo giá bán: Tiền hàng = SL × Giá; CK và VAT theo đúng % của dòng bán cùng mã
@@ -59,21 +61,27 @@
       if (miss.length) throw new Error(`${name}: thiếu cột ${miss.join(', ')}`);
       const g = (r, k) => C[k] >= 0 ? r[C[k]] : '';
       const out = [];
+      out.skip = {}; out.noHd = 0;
       rows.slice(h + 1).forEach((r, i) => {
         const mvt = str(g(r, 'mvt')), hdv = g(r, 'hd'), hd = typeof hdv === 'number' ? String(hdv).padStart(8, '0') : str(hdv);
         if (!mvt || !hd) return;
+        // chỉ lấy "Xuất bán KH" và "Xuất khuyến mãi"; bỏ đổi trả, hàng mẫu, xuất khác, hủy combo…
+        const loai = str(g(r, 'loai')) || 'Xuất bán KH', fl = fold(loai);
+        const isKmLoai = /khuyen mai/.test(fl);
+        if (!isKmLoai && fl !== 'xuat ban kh') { out.skip[loai] = (out.skip[loai] || 0) + 1; return; }
+        if (!/\d/.test(hd)) { out.noHd++; return; } // "Chưa xuất HĐ"
         const soRaw = C.so.map(c => str(r[c])).find(Boolean) || '';
         const isKmSo = /^KM[-_ ]?/i.test(soRaw);
         const so = soRaw.replace(/^KM[-_ ]?/i, '').trim();
         const gia = num(g(r, 'gia')), th = num(g(r, 'th'));
         out.push({
-          file: name, line: h + 2 + i, loai: str(g(r, 'loai')) || 'Xuất bán KH', npx: dstr(g(r, 'npx')), nhd: dstr(g(r, 'nhd')), hd,
-          kh: str(g(r, 'kh')), kh2: str(g(r, 'kh2')), tkh: str(g(r, 'tkh')), mch: str(g(r, 'mch')), tch: str(g(r, 'tch')), cn: str(g(r, 'cn')),
+          file: name, line: h + 2 + i, loai: 'Xuất bán KH', npx: dstr(g(r, 'npx')), nhd: dstr(g(r, 'nhd')), hd,
+          kh: str(g(r, 'kh')).replace(/HP$/i, ''), kh2: str(g(r, 'kh2')), tkh: str(g(r, 'tkh')), mch: str(g(r, 'mch')), tch: str(g(r, 'tch')), cn: str(g(r, 'cn')),
           mvt, bc: str(g(r, 'bc')), ten: str(g(r, 'ten')), en: str(g(r, 'en')), dv: str(g(r, 'dv')),
           sl: num(g(r, 'sl')), gia, th, ck: num(g(r, 'ck')), vat: num(g(r, 'vat')),
           kho: str(g(r, 'kho')), g0: str(g(r, 'g0')), g1: str(g(r, 'g1')), g2: str(g(r, 'g2')), g3: str(g(r, 'g3')),
           lot: str(g(r, 'lot')), hsd: str(g(r, 'hsd')), nsx: dstr(g(r, 'nsx')), nhh: dstr(g(r, 'nhh')), ndh: dstr(g(r, 'ndh')),
-          so, soRaw, km: isKmSo || (gia === 0 && th === 0)
+          so, soRaw, km: isKmLoai || isKmSo
         });
       });
       return out;
@@ -84,7 +92,8 @@
   // ---- gộp KM vào hóa đơn bán ----
   function convert(lines) {
     const warn = [];
-    const W = (lv, t) => warn.push({ lv, t });
+    let cur = '';
+    const W = (lv, t) => warn.push({ lv, t, kh: cur });
     // giá bán theo mã (đơn bán) để dùng khi KM là mã không có trong đơn
     const priceBy = new Map();
     lines.forEach(o => { if (!o.km && o.gia > 0 && o.th > 0) { const k = o.mvt; if (!priceBy.has(k)) priceBy.set(k, { gia: o.gia, ckr: r4(o.ck / o.th), vr: o.th - o.ck ? r4(o.vat / (o.th - o.ck)) : 0, src: o }); } });
@@ -97,6 +106,7 @@
     });
     const npps = new Map();
     orders.forEach(d => {
+      cur = d.kh;
       const head = d.sale[0] || d.km[0];
       const saleHd = [...new Set(d.sale.map(o => o.hd))], kmHd = [...new Set(d.km.map(o => o.hd))];
       if (!d.sale.length) W('err', `Đơn ${d.so} (${d.kh}): chỉ có hàng KM (HĐ ${kmHd.join(', ')}), không có hóa đơn bán để gộp. Đã giữ nguyên dòng KM, giá 0.`);
@@ -114,7 +124,7 @@
       d.sale.forEach(o => add(o, false));
       d.km.forEach(o => add(o, !!d.sale.length));
       const ckOrder = d.sale.length ? r4(d.sale[0].th ? d.sale[0].ck / d.sale[0].th : 0) : 0;
-      let n = npps.get(d.kh); if (!n) npps.set(d.kh, n = { kh: d.kh, ten: head.kh2 || head.tkh, rows: [], orders: [], bad: 0 });
+      let n = npps.get(d.kh); if (!n) npps.set(d.kh, n = { kh: d.kh, ten: head.kh2 || head.tkh, isNpp: /^npp/.test(fold(head.kh2 || head.tkh)), rows: [], orders: [], bad: 0 });
       items.forEach(it => {
         const o = it.base;
         if (!it.gia) {
@@ -163,23 +173,33 @@
   }
 
   // ---- hiển thị: cảnh báo + nút tải ở đầu, rồi từng NPP ----
+  // khách đang chọn: mặc định chỉ khách tên "NPP …"
+  const shown = () => { const v = $('dmKh').value; return R.npps.filter(n => v === '*' ? true : v === 'npp' ? n.isNpp : n.kh === v); };
+  function fillKh() {
+    const sel = $('dmKh'), cur = sel.value; sel.innerHTML = '';
+    const nNpp = R.npps.filter(n => n.isNpp).length;
+    [['npp', `Chỉ khách NPP (${nNpp})`], ['*', `Tất cả khách (${R.npps.length})`]].concat(R.npps.map(n => [n.kh, `${n.kh} · ${n.ten}`])).forEach(([v, t]) => { const o = el('option', '', t); o.value = v; sel.append(o); });
+    sel.value = [...sel.options].some(o => o.value === cur) ? cur : (nNpp ? 'npp' : '*');
+  }
   function show() {
+    const NS = shown(), KS = new Set(NS.map(n => n.kh));
     const wl = $('dmWarn'); wl.innerHTML = '';
-    const errs = R.warn.filter(w => w.lv === 'err'), warns = R.warn.filter(w => w.lv !== 'err');
+    const ws = R.warn.filter(w => KS.has(w.kh));
+    const errs = ws.filter(w => w.lv === 'err'), warns = ws.filter(w => w.lv !== 'err');
     errs.concat(warns).slice(0, 40).forEach(w => wl.append(el('li', w.lv, (w.lv === 'err' ? '❌ ' : '⚠️ ') + w.t)));
-    if (R.warn.length > 40) wl.append(el('li', 'warn', `… và ${R.warn.length - 40} cảnh báo khác.`));
-    wl.hidden = !R.warn.length;
+    if (ws.length > 40) wl.append(el('li', 'warn', `… và ${ws.length - 40} cảnh báo khác.`));
+    wl.hidden = !ws.length;
     const kpi = $('dmKpi'); kpi.innerHTML = '';
     const k = (lab, v, sub) => { const d = el('div', 'tile'); d.append(el('small', '', lab), el('b', '', v)); if (sub) d.append(el('small', 'note', sub)); kpi.append(d); };
-    const all = R.npps.flatMap(n => n.rows), ords = R.npps.flatMap(n => n.orders);
-    k('Số NPP', String(R.npps.length), R.npps.map(n => n.kh).join(', '));
+    const all = NS.flatMap(n => n.rows), ords = NS.flatMap(n => n.orders);
+    k('Số khách', String(NS.length), NS.map(n => n.kh).slice(0, 8).join(', ') + (NS.length > 8 ? '…' : ''));
     k('Số đơn', String(ords.length), 'hóa đơn bán: ' + new Set(ords.map(o => o.hd)).size);
-    k('Số dòng file up', all.length.toLocaleString('vi-VN'), `từ ${R.lines.toLocaleString('vi-VN')} dòng gốc`);
-    k('Tổng SL up', all.reduce((s, x) => s + x.sl, 0).toLocaleString('vi-VN'), 'KM: ' + ords.reduce((s, o) => s + o.slKm, 0).toLocaleString('vi-VN'));
+    k('Số dòng file up', all.length.toLocaleString('vi-VN'), R.info);
+    k('Tổng SL up', all.reduce((s, x) => s + x.sl, 0).toLocaleString('vi-VN'), 'trong đó KM: ' + ords.reduce((s, o) => s + o.slKm, 0).toLocaleString('vi-VN'));
     k('Tổng tiền tt', vnd(all.reduce((s, x) => s + x.tt, 0)) + ' đ');
     const list = $('dmList'); list.innerHTML = '';
-    R.npps.forEach((n, i) => {
-      const d = el('details', 'gh-acc'); d.open = i === 0 || R.npps.length === 1;
+    NS.forEach((n, i) => {
+      const d = el('details', 'gh-acc'); d.open = i === 0 || NS.length === 1;
       const s = el('summary');
       s.append(el('b', '', `${n.kh} · ${n.ten}`), el('span', 'note', ` · ${n.orders.length} đơn · ${n.rows.length} dòng · SL ${n.rows.reduce((a, x) => a + x.sl, 0).toLocaleString('vi-VN')} · ${vnd(n.rows.reduce((a, x) => a + x.tt, 0))} đ`));
       if (n.bad) s.append(el('span', 'gh-v', ` · ${n.bad} dòng thiếu giá`));
@@ -205,8 +225,10 @@
       const w2 = el('div', 'tbl-scroll rp-tbl'); w2.append(tb2); sc2.append(w2); d.append(sc2);
       list.append(d);
     });
-    $('dmAll').hidden = R.npps.length < 2;
+    $('dmAll').hidden = NS.length < 2;
+    $('dmAll').textContent = `⬇ Tải tất cả (${NS.length} file, .zip)`;
   }
+  $('dmKh').addEventListener('change', () => R && show());
   // dán vào UP WEB 2026: NPP DD | SỐ PO KM | Số HĐ KM | SL KM | SỐ PO BÁN | SỐ HD BÁN | GIÁ TRỊ | DEALINE | GIỜ | SL BÁN | NOTE | dò số HĐ | | SL UP | HĐ UP
   const upweb = n => n.orders.map(o => [o.npp, o.kmSo, o.kmHd || '0', o.slKm, o.so, o.hd, '', '', '', o.slBan, '', o.hd, '', o.slBan + o.slKm, `${o.kmHd || '0'}, ${o.hd}`].join('\t')).join('\n');
 
@@ -214,20 +236,23 @@
     if (!files.length) return;
     const btn = $('dmGo'); btn.disabled = true; $('dmMsg').textContent = 'Đang đọc file…';
     try {
-      let lines = [];
-      for (const f of files) lines = lines.concat(readFile(new Uint8Array(await f.arrayBuffer()), f.name));
-      if (!lines.length) throw new Error('Không có dòng hàng nào trong file.');
+      let lines = [], skip = {}, noHd = 0;
+      for (const f of files) { const L = readFile(new Uint8Array(await f.arrayBuffer()), f.name); lines = lines.concat(L); noHd += L.noHd; for (const t in L.skip) skip[t] = (skip[t] || 0) + L.skip[t]; }
+      if (!lines.length) throw new Error('Không có dòng "Xuất bán KH" / "Xuất khuyến mãi" nào đã xuất hóa đơn trong file.');
       R = convert(lines);
+      const sk = Object.entries(skip).map(([t, n]) => `${t} ${n}`).concat(noHd ? [`chưa xuất HĐ ${noHd}`] : []);
+      R.info = `${lines.length.toLocaleString('vi-VN')} dòng bán + KM` + (sk.length ? `; bỏ: ${sk.join(', ')}` : '');
+      fillKh();
       $('dmOut').hidden = false; show();
-      const nErr = R.warn.filter(w => w.lv === 'err').length;
-      $('dmMsg').textContent = `Xong: ${R.npps.length} NPP, ${R.npps.reduce((s, n) => s + n.rows.length, 0)} dòng file up.` + (nErr ? ` Có ${nErr} lỗi cần sửa (ô đỏ ở trên).` : '');
+      const NS = shown(), nErr = R.warn.filter(w => w.lv === 'err' && NS.some(n => n.kh === w.kh)).length;
+      $('dmMsg').textContent = `Xong: ${NS.length} khách, ${NS.reduce((s, n) => s + n.rows.length, 0)} dòng file up.` + (nErr ? ` Có ${nErr} lỗi cần sửa (ô đỏ ở trên).` : '');
       logDm({ event: 'Chuyển đổi file up DMS', orders: R.npps.reduce((s, n) => s + n.orders.length, 0), ok: nErr ? 0 : 1, err: nErr, names: files.map(f => f.name).join(', ').slice(0, 200) });
     } catch (e) { $('dmMsg').textContent = '❌ ' + (e.message || e); $('dmOut').hidden = true; $('dmAll').hidden = true; R = null; logDm({ event: 'Chuyển đổi file up DMS', ok: 0, err: 1, names: String(e.message || e).slice(0, 150) }); }
     finally { btn.disabled = false; }
   };
   $('dmAll').onclick = async () => {
     if (!R) return;
-    const zip = new JSZip(); R.npps.forEach(n => zip.file(fileName(n), toXls(n)));
+    const zip = new JSZip(); shown().forEach(n => zip.file(fileName(n), toXls(n)));
     const t = new Date();
     save(await zip.generateAsync({ type: 'blob' }), `File up DMS ${p2(t.getDate())}.${p2(t.getMonth() + 1)}.zip`);
     logDm({ event: 'Tải file up DMS (zip)', orders: R.npps.length });

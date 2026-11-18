@@ -1,7 +1,7 @@
   <section class="panel rp gh" aria-labelledby="dmTitle">
     <p class="gh-beta">🧪 Bản thử, chưa có trên bản chính thức</p>
     <h2 id="dmTitle">🧾 Chuyển đổi file up DMS</h2>
-    <p class="note">Kéo thả file <b>chi tiết hóa đơn xuất bán</b> xuất từ phần mềm (dạng sheet "data" của MẪU IMP), được chọn nhiều file. Web gộp hàng KM vào hóa đơn bán cùng số đơn, tính tiền theo giá bán và làm file <b>.xls</b> đúng mẫu import DMS (sheet Import, 45 cột), mỗi NPP một file. File chỉ xử lý trên máy bạn.</p>
+    <p class="note">Kéo thả file <b>Bảng kê chi tiết hóa đơn</b> xuất từ phần mềm (dạng file 18112026143407PM.xlsx), được chọn nhiều file. Web lấy phiếu "Xuất bán KH" và "Xuất khuyến mãi", gộp số lượng KM vào đơn bán cùng số đơn, tính lại Tiền hàng, Tiền CK, Tiền thuế, Tổng tiền và làm file <b>.xls</b> đúng mẫu import DMS (sheet Import, 45 cột), mỗi NPP một file. File chỉ xử lý trên máy bạn.</p>
     <div class="drop" id="dmDrop" tabindex="0" role="button" aria-label="Chọn hoặc kéo thả file chi tiết hóa đơn">
       <span class="team-ic" aria-hidden="true">📄</span>
       <div><b id="dmName">Kéo thả file chi tiết hóa đơn vào đây</b><small>hoặc bấm để chọn file .xlsx / .xls · được chọn nhiều file</small></div>
@@ -13,6 +13,7 @@
       <span class="note" id="dmMsg" role="status" aria-live="polite"></span>
     </div>
     <div id="dmOut" hidden>
+      <div class="gh-filters"><label>Khách hàng <select id="dmKh"></select></label></div>
       <ul class="issues" id="dmWarn" style="margin:12px 0 0"></ul>
       <div class="rp-kpi" id="dmKpi"></div>
       <div id="dmList"></div>

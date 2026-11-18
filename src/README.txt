@@ -4,8 +4,8 @@ GHÉP & ĐƯA LÊN WEB
 - build.sh: ghép head.html + body.html + catalog.js + fuji.js + core.js + data.js + app.js + social.js + report.js + chat.js
   -> ffm-chuyen-don.html (chép đè ../index.html). Sửa đường dẫn "cd" trong build.sh cho đúng thư mục đang làm.
 - build_beta.sh: như trên + ghd_section.html + dms_section.html (chèn ở <!--BETA_GHD-->) + ghd.js + dms.js, FFM_DATA_BASE="../data/" -> ../beta/index.html.
-- dms.js / dms_section.html (beta, Team khác): "Chuyển đổi file up DMS" (team Đơn hàng GT). Đọc file chi tiết hóa đơn xuất bán
-  (dạng sheet "data" của MẪU IMP), gộp dòng KM (giá 0 / số đơn KM-…) vào hóa đơn bán cùng số đơn theo mã + LOT + hạn dùng,
+- dms.js / dms_section.html (beta, Team khác): "Chuyển đổi file up DMS" (team Đơn hàng GT). Đọc "Bảng kê chi tiết hóa đơn (tất cả)" (vd 18112026143407PM.xlsx), chỉ lấy Xuất bán KH + Xuất khuyến mãi đã có HĐ, mã KH bỏ đuôi HP
+  gộp dòng KM (giá 0 / số đơn KM-…) vào hóa đơn bán cùng số đơn theo mã + LOT + hạn dùng,
   tính tiền theo giá bán (CK, VAT theo % dòng bán), xuất .xls sheet Import 45 cột, mỗi Mã KH 1 file + bảng đối chiếu kiểu UP WEB.
   Tính năng beta chỉ đưa lên bản chính khi anh Tài duyệt.
 - Mỗi lần đưa lên: tăng số bản "vNN" trong body.html, commit, push; GitHub Pages cập nhật sau ~1 phút.
