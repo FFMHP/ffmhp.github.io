@@ -1,4 +1,4 @@
-/* BẢN THỬ (beta) · Team khác › Chuyển đổi file up DMS (team Đơn hàng GT).
+/* Team khác › Chuyển đổi file up DMS (team Đơn hàng GT). Bản chính từ v67.
    Đầu vào: "BẢNG KÊ CHI TIẾT HÓA ĐƠN (TẤT CẢ)" xuất từ phần mềm (vd 18112026143407PM.xlsx), 1 hoặc nhiều file.
    Quy tắc (suy từ "File final up DMS.xls", NPP Minh Tuấn Kiệt 06-17/11/2026):
    - Chỉ lấy Loại phiếu "Xuất bán KH" và "Xuất khuyến mãi" đã có số HĐ; bỏ đổi trả, hàng mẫu, xuất khác, hủy combo, "Chưa xuất HĐ".

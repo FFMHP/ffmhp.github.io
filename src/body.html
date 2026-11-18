@@ -149,6 +149,36 @@
     </div>
     <div id="rpOut" hidden></div>
   </section>
+  <section class="panel rp gh" aria-labelledby="dmTitle">
+    <h2 id="dmTitle">🧾 Chuyển đổi file up DMS</h2>
+    <p class="note">Kéo thả file <b>Bảng kê chi tiết hóa đơn</b> xuất từ phần mềm (dạng file 18112026143407PM.xlsx), được chọn nhiều file. Web lấy phiếu "Xuất bán KH" và "Xuất khuyến mãi", gộp số lượng KM vào đơn bán cùng số đơn, tính lại Tiền hàng, Tiền CK, Tiền thuế, Tổng tiền và làm file <b>.xls</b> đúng mẫu import DMS (sheet Import, 45 cột), mỗi NPP một file. File chỉ xử lý trên máy bạn.</p>
+    <div class="drop" id="dmDrop" tabindex="0" role="button" aria-label="Chọn hoặc kéo thả file chi tiết hóa đơn">
+      <span class="team-ic" aria-hidden="true">📄</span>
+      <div><b id="dmName">Kéo thả file chi tiết hóa đơn vào đây</b><small>hoặc bấm để chọn file .xlsx / .xls · được chọn nhiều file</small></div>
+    </div>
+    <input type="file" id="dmFile" accept=".xlsx,.xls" multiple hidden>
+    <details class="rp-more" id="dmAddBox">
+      <summary>+ Thêm NPP up DMS <span id="dmNppCount"></span></summary>
+      <p class="note" id="dmNppList" style="margin:6px 0"></p>
+      <div class="rp-fix">
+        <input type="text" id="dmAddCode" placeholder="Mã KH (vd C100061)" autocomplete="off">
+        <input type="text" id="dmAddName" placeholder="Tên NPP (vd NPP Nguyên Hậu)" autocomplete="off" style="width:220px">
+        <button type="button" class="small" id="dmAddBtn">Lưu vào bảng chung</button>
+      </div>
+      <p class="note" id="dmAddNote" style="margin:4px 0 0">Lưu ở sheet "Mã KH" (account DMS) trong Google Sheet "FFM Chuyển Đơn - Thống kê", cả team dùng chung. Muốn bỏ một NPP thì xoá dòng đó trong sheet.</p>
+    </details>
+    <div class="rp-act">
+      <button type="button" class="primary" id="dmGo" disabled>Chuyển đổi</button>
+      <button type="button" class="primary" id="dmAll" hidden>⬇ Tải tất cả</button>
+      <span class="note" id="dmMsg" role="status" aria-live="polite"></span>
+    </div>
+    <div id="dmOut" hidden>
+      <div class="gh-filters"><label>Khách hàng <select id="dmKh"></select></label></div>
+      <ul class="issues" id="dmWarn" style="margin:12px 0 0"></ul>
+      <div class="rp-kpi" id="dmKpi"></div>
+      <div id="dmList"></div>
+    </div>
+  </section>
 <!--BETA_GHD-->
 </div>
 
@@ -225,7 +255,7 @@
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 18/11/2026 · v66</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 18/11/2026 · v67</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
