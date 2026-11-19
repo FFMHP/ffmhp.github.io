@@ -420,12 +420,15 @@
     const s = parseSimpleSheet(acct, wb, fileName, { bcHead: /^ma sp$|barcode|ma vach/, qtyHead: /^sl dat|^so luong/ });
     if (s.error) return s;
     const addr = (s.head.split('\n').find(l => /dia chi/.test(fold(l))) || s.head);
-    const hit = pickCustomer(acct, addr, s.issues, /SAKUKO\d{3,}/i);
+    // góp ý Tiến 19/11: mã SAKUKOxxxx ghi sẵn ở 1 ô (vd H6/H7 cạnh tiêu đề cột) -> lấy luôn mã đó.
+    // Không có mã / mã không có trong DMKH -> dò theo dòng "Địa chỉ"; dòng đó chỉ ghi người nhận thì dò cả phần đầu đơn (dòng "NCC: … 34 Vũ Phạm Hàm").
+    const addrText = matchAddr(acct.customers, addr, acct.brandWords || []).hit ? addr : s.head;
+    const hit = pickCustomer(acct, addrText, s.issues, /SAKUKO\d{3,}/i, findCode(wb, /^\s*(SAKUKO\d{3,})\s*$/i));
     const abbr = hit ? initials(hit.name, acct.brandWords) : '';
     if (hit && !abbr) s.issues.push({ key: 'po', level: 'err', msg: 'Không tạo được chữ tắt cửa hàng cho số đơn. Nhập tay Số đơn.' });
     const need = dmy((s.head.split('\n').find(l => /can giao|ngay giao/.test(fold(l))) || ''));
     if (need) s.issues.push({ level: 'info', msg: `Đơn ghi thời gian cần giao ${need.split('-').reverse().join('/')}; ngày giao trên form = ngày về đơn + ${acct.leadDays} ngày làm việc.` });
-    return { prefix: acct.prefix, seq: acct.seq, abbr, customer: hit ? hit.code : '', store: addr.replace(/^.*?:\s*/, ''), lines: s.lines, issues: s.issues };
+    return { prefix: acct.prefix, seq: acct.seq, abbr, customer: hit ? hit.code : '', store: hit ? hit.name : addr.replace(/^.*?:\s*/, ''), lines: s.lines, issues: s.issues };
   }
   // Hiền Lương: file .xls cũ, font TCVN3 (chữ Việt hiển thị lỗi) -> dò theo vị trí: dòng có barcode 8-14 số, SL = số đầu tiên sau cột ĐVT
   function parseHienLuong(acct, wb, fileName) {

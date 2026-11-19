@@ -578,7 +578,7 @@ button.danger{color:var(--err);border-color:var(--err)}
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 18/11/2026 · v72</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 19/11/2026 · v73</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
@@ -1592,12 +1592,15 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
     const s = parseSimpleSheet(acct, wb, fileName, { bcHead: /^ma sp$|barcode|ma vach/, qtyHead: /^sl dat|^so luong/ });
     if (s.error) return s;
     const addr = (s.head.split('\n').find(l => /dia chi/.test(fold(l))) || s.head);
-    const hit = pickCustomer(acct, addr, s.issues, /SAKUKO\d{3,}/i);
+    // góp ý Tiến 19/11: mã SAKUKOxxxx ghi sẵn ở 1 ô (vd H6/H7 cạnh tiêu đề cột) -> lấy luôn mã đó.
+    // Không có mã / mã không có trong DMKH -> dò theo dòng "Địa chỉ"; dòng đó chỉ ghi người nhận thì dò cả phần đầu đơn (dòng "NCC: … 34 Vũ Phạm Hàm").
+    const addrText = matchAddr(acct.customers, addr, acct.brandWords || []).hit ? addr : s.head;
+    const hit = pickCustomer(acct, addrText, s.issues, /SAKUKO\d{3,}/i, findCode(wb, /^\s*(SAKUKO\d{3,})\s*$/i));
     const abbr = hit ? initials(hit.name, acct.brandWords) : '';
     if (hit && !abbr) s.issues.push({ key: 'po', level: 'err', msg: 'Không tạo được chữ tắt cửa hàng cho số đơn. Nhập tay Số đơn.' });
     const need = dmy((s.head.split('\n').find(l => /can giao|ngay giao/.test(fold(l))) || ''));
     if (need) s.issues.push({ level: 'info', msg: `Đơn ghi thời gian cần giao ${need.split('-').reverse().join('/')}; ngày giao trên form = ngày về đơn + ${acct.leadDays} ngày làm việc.` });
-    return { prefix: acct.prefix, seq: acct.seq, abbr, customer: hit ? hit.code : '', store: addr.replace(/^.*?:\s*/, ''), lines: s.lines, issues: s.issues };
+    return { prefix: acct.prefix, seq: acct.seq, abbr, customer: hit ? hit.code : '', store: hit ? hit.name : addr.replace(/^.*?:\s*/, ''), lines: s.lines, issues: s.issues };
   }
   // Hiền Lương: file .xls cũ, font TCVN3 (chữ Việt hiển thị lỗi) -> dò theo vị trí: dòng có barcode 8-14 số, SL = số đầu tiên sau cột ĐVT
   function parseHienLuong(acct, wb, fileName) {
@@ -4016,8 +4019,7 @@ const TPL_TOTAL="UEsDBBQAAAAIAGRWbl1Gx01IlwAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE2
   route();
   schedule();
 })();
-</script>
-<script>
+</script><script>
 /* Team khác › Chuyển đổi file up DMS (team Đơn hàng GT). Bản chính từ v67.
    Đầu vào: "BẢNG KÊ CHI TIẾT HÓA ĐƠN (TẤT CẢ)" xuất từ phần mềm (vd 18112026143407PM.xlsx), 1 hoặc nhiều file.
    Quy tắc (suy từ "File final up DMS.xls", NPP Minh Tuấn Kiệt 06-17/11/2026):
