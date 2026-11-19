@@ -4,7 +4,7 @@ GHÉP & ĐƯA LÊN WEB
 - build.sh: ghép head.html + body.html + catalog.js + fuji.js + core.js + data.js + app.js + social.js + report.js + chat.js + dms.js
   -> ffm-chuyen-don.html (chép đè ../index.html). Sửa đường dẫn "cd" trong build.sh cho đúng thư mục đang làm.
 - build_beta.sh: như trên + ghd_section.html (chèn ở <!--BETA_GHD-->) + ghd.js, FFM_DATA_BASE="../data/" -> ../beta/index.html.
-- dms.js + khung trong body.html (Team khác, bản chính từ v67): "Chuyển đổi file up DMS" (team Đơn hàng GT). Đọc "Bảng kê chi tiết hóa đơn (tất cả)"
+- dms.js + khung trong body.html (trang Team đơn hàng GT #/don-hang-gt từ v74; trước đó ở Team khác từ v67): "Chuyển đổi file up DMS" (team Đơn hàng GT). Đọc "Bảng kê chi tiết hóa đơn (tất cả)"
   (vd 18112026143407PM.xlsx), chỉ lấy Xuất bán KH + Xuất khuyến mãi đã có HĐ, mã KH bỏ đuôi HP, gộp KM vào hóa đơn bán cùng số đơn theo
   mã + LOT + hạn dùng, tính lại tiền theo giá bán (CK, VAT theo % dòng bán như phần mềm), xuất .xls sheet Import 45 cột, mỗi NPP 1 file.
   Chỉ xuất 7 NPP (DMS_KH/DMS_TEN) + NPP team thêm tay (sheet "Mã KH", account DMS).
@@ -18,9 +18,11 @@ CẤU TRÚC
 - data.js: nạp ../data (DMKH, DMSP, Code chuyển đổi, Form final). PREFIX = tiền tố mã KH từng acc.
   Code chuyển đổi: sheet "Barcode Aeon" -> FFM_AEON_MAP; các sheet khác (SATRA, LOTTE…) -> FFM_CONV[tên sheet].
 - app.js: giao diện chuyển đơn, CODE_PREFIX (kiểm tra mã KH team tự khai báo).
-- report.js: Báo cáo List order (tab Team khác) -> "Total PO update dd.mm.yy.xlsx" (mẫu sheet Total = tpl_total.b64).
+- report.js: Báo cáo List order (trang Team báo cáo #/bao-cao từ v74) -> "Total PO update dd.mm.yy.xlsx" (mẫu sheet Total = tpl_total.b64).
 - chat.js: đính kèm file trong chat (📎/kéo thả/dán) -> Apps Script upload kind='file' -> Drive "FFM Chat file đính kèm"; tin nhắn lưu "[[f:<id>|<tên>]]" (v61).
 - chat.js / social.js: chat các phòng (tong, donhang, khac) và Sinh hoạt chung qua Apps Script (FFM_API).
+- Trang chủ 4 lối vào (v74): Đơn hàng MT #/don-hang (phòng donhang), Đơn hàng GT #/don-hang-gt, Báo cáo #/bao-cao, Team khác #/khac (tính năng đang xây).
+  GT, Báo cáo, Team khác dùng chung phòng "khac" (anh Tài chọn 19/11): Apps Script không nhận phòng lạ, phòng lạ bị đẩy về "tong".
 
 QUY TẮC
 - Anh Tài bảo sửa acc nào thì chỉ sửa và thử acc đó, không chạy lại các acc khác.
