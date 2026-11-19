@@ -1,13 +1,17 @@
-/* Trang chủ (2 nhóm) + chat theo phòng.
-   #/          -> trang chủ, phòng "tong" (chat chung)
-   #/don-hang  -> công cụ chuyển đơn, phòng "donhang"
-   #/khac      -> team khác (đang xây dựng), phòng "khac"
+/* Trang chủ (4 nhóm) + chat theo phòng.
+   #/             -> trang chủ, phòng "tong" (chat chung)
+   #/don-hang     -> Team đơn hàng MT (chuyển đơn FORM_2_HP), phòng "donhang"
+   #/don-hang-gt  -> Team đơn hàng GT (Chuyển đổi file up DMS), phòng "gt"
+   #/bao-cao      -> Team báo cáo (Báo cáo List order), phòng "baocao"
+   #/khac         -> Team khác (tính năng đang xây dựng), phòng "khac" (giữ lịch sử cũ)
    Tin nhắn lưu ở sheet "Chat" (cột Phòng). Hỏi tin mới 15 giây/lần khi mở khung, 60 giây/lần khi đóng. */
 (function () {
   const $ = id => document.getElementById(id);
   const ROUTES = {
     '': { page: 'pageHome', room: 'tong', title: 'Chat chung FFM', doc: 'Công cụ team FFM' },
-    'don-hang': { page: 'pageOrders', room: 'donhang', title: 'Chat team đơn hàng', doc: 'FFM Chuyển Đơn' },
+    'don-hang': { page: 'pageOrders', room: 'donhang', title: 'Chat team đơn hàng MT', doc: 'FFM Chuyển Đơn · Đơn hàng MT' },
+    'don-hang-gt': { page: 'pageGT', room: 'gt', title: 'Chat team đơn hàng GT', doc: 'FFM · Đơn hàng GT' },
+    'bao-cao': { page: 'pageReport', room: 'baocao', title: 'Chat team báo cáo', doc: 'FFM · Team báo cáo' },
     'khac': { page: 'pageOther', room: 'khac', title: 'Chat team khác', doc: 'FFM · Team khác' },
     'sinh-hoat': { page: 'pageSocial', room: 'tong', title: 'Chat chung FFM', doc: 'FFM · Sinh hoạt chung' }
   };
