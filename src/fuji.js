@@ -231,7 +231,7 @@
     for (let i = 0, j = 0; i < p.length; i += 4, j++) dark[j] = (p[i] * 0.299 + p[i + 1] * 0.587 + p[i + 2] * 0.114) < 150 ? 1 : 0;
     // dòng kẻ ngang: chuỗi điểm tối liên tục dài nhất trên mỗi hàng
     // bản scan hơi nghiêng: đường kẻ ngang lệch vài px qua bề ngang bảng -> xét dải ±2 dòng (B) khi tìm đoạn tối liền mạch
-    const B = 2, isD = (x, y) => { for (let k = -B; k <= B; k++) { const yy = y + k; if (yy >= 0 && yy < H && dark[yy * W + x]) return 1; } return 0; };
+    const B = o.band || 2, isD = (x, y) => { for (let k = -B; k <= B; k++) { const yy = y + k; if (yy >= 0 && yy < H && dark[yy * W + x]) return 1; } return 0; };
     const runRow = y => { let best = 0, cur = 0, s0 = 0, bs = 0; for (let x = 0; x < W; x++) { if (isD(x, y)) { if (!cur) s0 = x; cur++; if (cur > best) { best = cur; bs = s0; } } else cur = 0; } return { len: best, x0: bs, x1: bs + best }; };
     const hl = [];
     for (let y = 0; y < H; y++) { const r = runRow(y); if (r.len > W * 0.5) hl.push({ y, x0: r.x0, x1: r.x1 }); }
@@ -316,9 +316,9 @@
     opts = opts || {};
     let img = await loadImage(blob);
     if (opts.deskew) { const a = deskewAngle(img); if (Math.abs(a) >= 0.15) img = rotated(img, a); }
-    const k = Math.max(1, 1600 / img.naturalWidth), src = document.createElement('canvas');
-    src.width = Math.round(img.naturalWidth * k); src.height = Math.round(img.naturalHeight * k);
-    { const g = src.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, src.width, src.height); g.imageSmoothingQuality = 'high'; g.drawImage(img, 0, 0, src.width, src.height); }
+    const k = Math.max(1, 1600 / img.naturalWidth);
+    const scaled = im => { const c = document.createElement('canvas'); c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k); const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.imageSmoothingQuality = 'high'; g.drawImage(im, 0, 0, c.width, c.height); return c; };
+    let src = scaled(img);
     onProgress && onProgress('Đang tải bộ nhận dạng chữ (lần đầu cần internet)…');
     const worker = await getWorker(tessOpts);
     await worker.setParameters({ tessedit_char_whitelist: '', tessedit_pageseg_mode: '3' });
@@ -345,7 +345,28 @@
       if (vp) { res.po = vp.v; res.poUnsure = !vp.sure; }
       if (vd) { res.orderDate = vd.v; res.dateUnsure = !vd.sure; }
     }
-    const grid = findGrid(src, opts.grid);
+    let grid = findGrid(src, opts.grid);
+    // opts.photoRetry (BRG, góp ý Tiến 20/11): ảnh chụp bằng điện thoại bị nghiêng/xiên -> không thấy đủ đường kẻ.
+    // Thử xoay ảnh từng góc nhỏ và nới dải dò đường kẻ, lấy góc thấy nhiều cột + dòng nhất.
+    if (opts.photoRetry && (!grid || grid.cols.length < 8)) {
+      onProgress && onProgress('Ảnh bị nghiêng, đang dò lại bảng hàng…');
+      const base = img; let best = null;
+      const tryA = (a, band) => { const im = a ? rotated(base, a) : base, s2 = scaled(im), g2 = findGrid(s2, Object.assign({}, opts.grid, { band })); const sc = g2 ? g2.cols.length * 100 + g2.rows.length : 0; if (!best || sc > best.sc) best = { sc, a, g: g2, im, s: s2 }; };
+      for (let a = -3; a <= 3.001; a += 0.5) tryA(a, 6);
+      const a0 = best.a;
+      for (const a of [a0 - 0.25, a0, a0 + 0.25]) tryA(a, 8);
+      if (best.g && (!grid || best.sc > grid.cols.length * 100 + grid.rows.length)) {
+        img = best.im; src = best.s; grid = best.g;
+        // ảnh đã xoay thẳng: đọc lại chữ cả trang để lấy Số đơn / Nơi nhận / Ngày đặt còn thiếu
+        if (best.a && (!res.po || !res.store || !res.orderDate)) {
+          onProgress && onProgress('Đang đọc lại thông tin đơn trên ảnh đã xoay thẳng…');
+          await worker.setParameters({ tessedit_char_whitelist: '', tessedit_pageseg_mode: '3' });
+          const d2 = (await worker.recognize(src)).data;
+          const r2 = parseWords((d2.words || []).map(w => ({ t: w.text, x0: w.bbox.x0, y0: w.bbox.y0, x1: w.bbox.x1, y1: w.bbox.y1 })));
+          ['po', 'store', 'orderDate', 'total'].forEach(f => { if ((res[f] == null || res[f] === '') && r2[f] != null && r2[f] !== '') res[f] = r2[f]; });
+        }
+      }
+    }
     if (!grid) { res.error = 'Không tìm thấy bảng hàng (đường kẻ bảng) trong ảnh. Ảnh có bị mờ, nghiêng hay cắt mất bảng không?'; return res; }
     const inset = 4, cell = (ri, ci) => ({ x0: grid.cols[ci] + inset, x1: grid.cols[ci + 1] - inset, y0: grid.rows[ri] + inset, y1: grid.rows[ri + 1] - inset });
     // dòng tiêu đề: đọc chữ để biết cột nào là Mã vạch / Theo đơn / Đơn giá / Thành tiền

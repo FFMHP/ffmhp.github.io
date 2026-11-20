@@ -1224,7 +1224,7 @@
           res.source = 'image'; res.scanPdf = true;
         } else {
           try { await libs.ocr(); } catch (e) { return { error: 'Không tải được bộ nhận dạng chữ. Đọc ảnh chỉ chạy trong file FFM Chuyen Don.html mở trên máy có internet (link web không hỗ trợ). Nếu có file PDF gốc, dùng PDF.' }; }
-          try { res = await F.imageParse(new Blob([f.buf]), onProgress, libs.tessOpts); }
+          try { res = await F.imageParse(new Blob([f.buf]), onProgress, libs.tessOpts, { photoRetry: true }); }
           catch (e) { return { error: 'Không đọc được ảnh: ' + (e && e.message || e) + '. Nếu đang dùng link web, hãy mở file FFM Chuyen Don.html trên máy.' }; }
           res.source = 'image';
         }
@@ -1236,7 +1236,7 @@
         if (!po) issues.push({ key: 'po', level: 'err', msg: 'Không đọc được Số Đơn (18 số) trên phiếu. Nhập tay.' });
         else if (res.po && fnPo && res.po !== fnPo) issues.push({ level: 'warn', msg: `Số đơn trên phiếu (${res.po}) khác số trong tên file (${fnPo}). Đang dùng số ${po === fnPo ? 'trong tên file' : 'trên phiếu'}.` });
         else if (res.source === 'image' && !fnPo) issues.push({ key: 'po', level: 'warn', msg: `Số đơn đọc từ ảnh: ${po}. Ảnh scan dễ đọc nhầm số (vd 6 thành 0), so lại với phiếu trước khi tải.` });
-        const fnStore = norm(f.name).replace(/\.[a-z]+$/i, '').replace(/\d{18}/, '').replace(/^\s*20\d\d[.\-_]\d{1,2}[.\-_]\d{1,2}\s*-?/, '').replace(/[-_\s]+$/, '');
+        const fnStore = norm(f.name).replace(/\.[a-z]+$/i, '').replace(/\d{18}/, '').replace(/^\s*20\d\d[.\-_]\d{1,2}[.\-_]\d{1,2}\s*-?/, '').replace(/[-_\s]+\d{1,2}[.\-_]\d{1,2}([.\-_]\d{2,4})?\s*$/, '').replace(/[-_\s]+$/, ''); // bỏ ngày cuối tên file: "brg phố nối 19.11" 
         let m = res.store ? matchCustomer(this.customers, res.store, this.brand) : { hit: null };
         let via = res.store;
         if (!m.hit && fnStore) { m = matchCustomer(this.customers, fnStore, this.brand); via = fnStore; }
