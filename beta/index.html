@@ -613,7 +613,7 @@ button.danger{color:var(--err);border-color:var(--err)}
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 20/11/2026 · v75</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 20/11/2026 · v76</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
@@ -2224,6 +2224,64 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
   }
 
   /* JMART (13/11 → 16/11): PDF "PHIẾU ĐẶT HÀNG NHÀ CUNG CẤP" · SL in dạng "24.000" (= 24) · số đơn = Số phiếu đặt (DH…) */
+  // Annam Gourmet (ANGMT, góp ý Thắng 19/11): PDF "PURCHASE ORDER CONFIRMATION" (AGMPO…), bảng [No | Item code | BarCode | Description | Store | Quantity | Cost price VND | … | Disc. pct. | Disc. amount | Net amount VND]
+  // lấy BarCode + Quantity ("6.00" = 6) + Cost price VND; đối chiếu SL × giá × (1 - CK%) với Net amount · số đơn = Purchase order ID · cửa hàng dò theo ô Store
+  function parseAnnam(acct, items, fileName) {
+    const issues = [], rows = [];
+    const pages = [...new Set(items.map(x => x.page))];
+    const pageItems = {};
+    for (const pn of pages) {
+      const P = mergeRuns(items.filter(x => x.page === pn));
+      pageItems[pn] = P;
+      const F = re => P.filter(x => re.test(x.t)).sort((a, b) => a.x0 - b.x0);
+      const hBc = F(/^barcode$/i)[0], hQty = F(/^quantity$/i)[0];
+      if (!hBc || !hQty) continue;
+      const hPrice = F(/^cost price/i)[0], hNet = F(/^net amount/i)[0], hDisc = F(/^disc\.?$/i)[0];
+      const heads = { no: F(/^no$/i)[0], item: F(/^item code$/i)[0], bc: hBc, name: F(/^description$/i)[0], store: F(/^store$/i).filter(x => x.y0 > hBc.y0 - 5)[0], qty: hQty, price: hPrice, priceFr: F(/^cost price/i)[1], unit: F(/^unit$/i)[0], disc: hDisc, discAmt: F(/^disc\.? amount/i)[0], net: hNet, netFr: F(/^net amount/i)[1] };
+      const stat = F(/^statistic$/i)[0];
+      const skip = it => /^(vnd|fr|pct\.?|pcs)$/i.test(it.t);
+      const got = pdfTable(P, { heads, qty: 'qty', bc: 'bc', name: 'name', top: Math.max(hBc.y1, hQty.y1) + 8, stop: stat ? stat.y0 - 1 : 0, skip });
+      got.forEach(r => { if (/^\d{1,3}(,\d{3})*\.\d{2}$/.test(r.anchor.t)) rows.push(r); });
+    }
+    if (!rows.length) return { error: 'Không thấy cột BarCode / Quantity trên PO. File này có đúng mẫu Purchase Order Confirmation của Annam Gourmet không?' };
+    const num = cs => { const t = cs.map(x => x.t).join('').replace(/,/g, ''); return /^\d+(\.\d+)?$/.test(t) ? Number(t) : null; };
+    const lines = rows.map((r, i) => {
+      const q = Number(r.anchor.t.replace(/,/g, ''));
+      const ln = stdLine(i + 1, r.bc, q, r.name);
+      const price = num(r.cell('price')), disc = num(r.cell('disc')), net = num(r.cell('net'));
+      ln.price = price; ln.amount = net;
+      if (price != null) ln.name = `${ln.name} · giá ${price.toLocaleString('en-US')}${disc ? ` · CK ${disc}%` : ''}`;
+      if (price == null) ln.flags.push({ level: 'warn', msg: 'Không đọc được Cost price trên PO.' });
+      else if (net != null && Math.abs(q * price * (1 - (disc || 0) / 100) - net) > 1) ln.flags.push({ level: 'warn', msg: `SL × giá${disc ? ' × (1 - CK)' : ''} ≠ Net amount (${net.toLocaleString('en-US')}). Kiểm tra SL theo PO.` });
+      if (root.FUJI && ln.barcode && /^\d{8}$|^\d{12,14}$/.test(ln.barcode) && !root.FUJI.gtinOk(ln.barcode)) ln.flags.push({ level: 'warn', msg: 'Barcode sai số kiểm tra (có thể đọc thiếu số)' });
+      return ln;
+    });
+    dupCheck(lines, issues);
+    const P1 = pageItems[pages[0]] || [];
+    const txt = allText(P1);
+    const mPo = txt.match(/\b(AGMPO\d{6,})\b/i) || fileName.match(/(AGMPO\d{6,})/i);
+    const po = mPo ? mPo[1].toUpperCase() : '';
+    if (!po) issues.push({ key: 'po', level: 'err', msg: 'Không đọc được Purchase order ID (AGMPO…). Nhập tay Số đơn.' });
+    const od = (itemAfter(P1, /^order date/i) || {}).t || '';
+    // ô Store + Delivery/Store address nằm ở cột phải, trên bảng hàng
+    const lab = P1.find(x => /^store \.*:?$/i.test(x.t)) || P1.find(x => /^store\b/i.test(x.t) && /\.{3}/.test(x.t));
+    const hb = P1.find(x => /^barcode$/i.test(x.t));
+    const storeTxt = lab ? P1.filter(x => x.x0 >= lab.x0 - 5 && x.y0 >= lab.y0 - 3 && (!hb || x.y0 < hb.y0 - 5)).sort((a, b) => (a.y0 - b.y0) || (a.x0 - b.x0)).map(x => x.t).join(' ') : txt.slice(0, 600);
+    const toks = ' ' + key(storeTxt) + ' ';
+    const BRAND = /^(annam|an|nam|gourmet|angmt|store|shop)$/;
+    let best = null, bestN = 0;
+    acct.customers.forEach(c => {
+      const w = key(c.name).split(' ').filter(x => x && !BRAND.test(x));
+      if (w.length && w.every(x => toks.includes(' ' + x + ' ')) && w.length > bestN) { best = c; bestN = w.length; }
+    });
+    const storeLine = (storeTxt.match(/([A-Z0-9]{3,}-[^:]*?)(?:\s+Delivery|$)/) || [])[1] || '';
+    if (!best) issues.push({ key: 'customer', level: 'err', msg: 'Không dò được cửa hàng Annam Gourmet theo ô Store trên PO. Chọn ở ô Mã khách hàng (rồi bấm Ghi nhớ).' });
+    const sum = lines.reduce((s, l) => s + (l.qty || 0), 0);
+    issues.push({ level: 'info', msg: `PO Annam Gourmet: ${lines.length} dòng, tổng SL ${sum}. Lấy cột BarCode, Quantity, Cost price (giá hiện ở tên SP để đối chiếu; form FORM_2 không có cột giá).` });
+    if (od) issues.push({ level: 'info', msg: `Order date trên PO: ${od}.` });
+    return { fixedPo: true, editable: true, po, customer: best ? best.code : '', store: best ? best.name : (storeLine || 'Annam Gourmet'), lines, issues, source: 'pdf' };
+  }
+
   function parseJmart(acct, items, fileName) {
     const issues = [];
     const M = mergeRuns(items), F = re => M.find(x => re.test(x.t));
@@ -2599,6 +2657,12 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
     })
 
     ,
+    // Annam Gourmet (20/11, góp ý Thắng): PO PDF, số đơn = Purchase order ID (AGMPO…), cửa hàng dò theo ô Store (vd RGSTBP-Gourmet Shop Tien Bo Plaza -> ANGMT019)
+    ANG: pdfAcct('Annam Gourmet (ANGMT, PDF)', parseAnnam, {
+      customers: [{"code": "ANGMT005", "name": "ANNAM GOURMET XUÂN DIỆU"}, {"code": "ANGMT019", "name": "ANNAM GOURMET TIẾN BỘ PLAZA"}, {"code": "ANGMT015", "name": "ANNAM GOURMET LONG BIÊN"}, {"code": "ANGMT001", "name": "ANNAM GOURMET LÊ LỢI"}, {"code": "ANGMT002", "name": "ANNAM GOURMET HAI BÀ TRƯNG"}, {"code": "ANGMT003", "name": "ANNAM GOURMET AN PHÚ"}, {"code": "ANGMT004", "name": "ANNAM GOURMET PHÚ MỸ HƯNG"}, {"code": "ANGMT006", "name": "ANNAM GOURMET ESTELLA"}, {"code": "ANGMT007", "name": "ANNAM GOURMET SÀI GÒN PEARL"}, {"code": "ANGMT009", "name": "ANNAM GOURMET FELIZ EN VISTA"}, {"code": "ANGMT010", "name": "ANNAM GOURMET LANDMARK 81"}, {"code": "ANGMT012", "name": "ANNAM GOURMET NGUYỄN VĂN TRỖI"}, {"code": "ANGMT016", "name": "ANNAM GOURMET ASCENTIA"}, {"code": "ANGMT017", "name": "ANNAM GOURMET THẢO ĐIỀN GREEN"}, {"code": "ANGMT018", "name": "ANNAM GOURMET MASTERI THẢO ĐIỀN"}, {"code": "ANGMT020", "name": "ANNAM GOURMET VISTA AN KHÁNH"}, {"code": "ANGMT021", "name": "ANNAM GOURMET BECAMEX"}, {"code": "ANGMT_SG_008", "name": "ANNAM GOURMET Q2 TERRACE"}]
+    })
+
+    ,
     // SATRA (16/11): phiếu "ĐƠN ĐẶT HÀNG" mẫu MH-01, thường là bản scan PDF (không có chữ) hoặc ảnh
     // SL in dạng "18,000" (= 18) · số đơn = "Đơn đặt hàng số" P-… · barcode sai đổi theo sheet SATRA (Code chuyển đổi)
     SATRA: {
@@ -2801,7 +2865,7 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
 (function (root) {
   const BASE = root.FFM_DATA_BASE || 'data/';
   const FILES = { dmkh: 'DMKH.xlsx', dmsp: 'DMSP.xlsx', map: 'Code chuyển đổi.xlsx', tpl: 'Form final.xlsx' };
-  const PREFIX = { KKTC: 'KKTC', MOR: 'MORGT', BRG: 'BRGMART', AEON: 'AEON', SOIBIEN: 'SOIBIEN', ANNHIEN: 'ANHN', MIOMIO: 'MIOMIOW', FANTASY: 'FANTASY', FGARDEN: 'FGARDEN', HIENLUONG: 'HIENLUONG', HINODE: 'HINODE', JAPAUS: 'JAPAUS', SAKUKO: 'SAKUKO', SIBA: 'SIBA', ANHVIET: 'ANHVIET', CLEVER: 'CLEVERFOOD', FMKT: 'FMKTHNI', KAISER: 'CVS0', OHMEE: 'OHMEE', RFOOD: 'RFOODTP', TOP5: 'TOP5_MART', WEFRESH: 'WEFRESH', KPLAZA: 'KPLAZA', KOREAN: 'KOREAN', LMLUONG: 'LMLG', TATAMART: 'TATAMAT', JMART: 'JMART', SATRA: ['SATRA', 'STFD'] };
+  const PREFIX = { KKTC: 'KKTC', MOR: 'MORGT', BRG: 'BRGMART', AEON: 'AEON', SOIBIEN: 'SOIBIEN', ANNHIEN: 'ANHN', MIOMIO: 'MIOMIOW', FANTASY: 'FANTASY', FGARDEN: 'FGARDEN', HIENLUONG: 'HIENLUONG', HINODE: 'HINODE', JAPAUS: 'JAPAUS', SAKUKO: 'SAKUKO', SIBA: 'SIBA', ANHVIET: 'ANHVIET', CLEVER: 'CLEVERFOOD', FMKT: 'FMKTHNI', KAISER: 'CVS0', OHMEE: 'OHMEE', RFOOD: 'RFOODTP', TOP5: 'TOP5_MART', WEFRESH: 'WEFRESH', KPLAZA: 'KPLAZA', KOREAN: 'KOREAN', LMLUONG: 'LMLG', TATAMART: 'TATAMAT', JMART: 'JMART', ANG: 'ANGMT', SATRA: ['SATRA', 'STFD'] };
   const LABEL = { dmkh: 'DMKH', dmsp: 'DMSP', map: 'Code chuyển đổi', tpl: 'Form final' };
   const CACHE = 'ffm-data-v1:';
   // Google Apps Script: thống kê + bảng "Code AEON" team tự thêm
@@ -3205,7 +3269,7 @@ $('addBtn').addEventListener('click', () => {
   $('addBc').value = ''; $('addPc').value = ''; acctNote();
 });
 // Mã KH: team tự thêm (chọn tay ở ô Mã khách hàng là tự lưu; hoặc thêm trong ô "+ Thêm mã khách hàng")
-const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/, ANNHIEN: /^ANHN/, MIOMIO: /^MIOMIOW/, FANTASY: /^FANTASY/, FGARDEN: /^FGARDEN/, HIENLUONG: /^HIENLUONG/, HINODE: /^HINODE/, JAPAUS: /^JAPAUS/, SAKUKO: /^SAKUKO/, SIBA: /^SIBA/, ANHVIET: /^ANHVIET/, CLEVER: /^CLEVERFOOD/, FMKT: /^FMKTHNI/, KAISER: /^CVS/, OHMEE: /^OHMEE/, RFOOD: /^RFOODTP/, TOP5: /^TOP5_MART/, WEFRESH: /^WEFRESH/, KPLAZA: /^KPLAZA/, KOREAN: /^KOREAN/, LMLUONG: /^LMLG/, TATAMART: /^TATAMAT/, JMART: /^JMART/, SATRA: /^(SATRA|STFD)/ };
+const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/, ANNHIEN: /^ANHN/, MIOMIO: /^MIOMIOW/, FANTASY: /^FANTASY/, FGARDEN: /^FGARDEN/, HIENLUONG: /^HIENLUONG/, HINODE: /^HINODE/, JAPAUS: /^JAPAUS/, SAKUKO: /^SAKUKO/, SIBA: /^SIBA/, ANHVIET: /^ANHVIET/, CLEVER: /^CLEVERFOOD/, FMKT: /^FMKTHNI/, KAISER: /^CVS/, OHMEE: /^OHMEE/, RFOOD: /^RFOODTP/, TOP5: /^TOP5_MART/, WEFRESH: /^WEFRESH/, KPLAZA: /^KPLAZA/, KOREAN: /^KOREAN/, LMLUONG: /^LMLG/, TATAMART: /^TATAMAT/, JMART: /^JMART/, ANG: /^ANGMT/, SATRA: /^(SATRA|STFD)/ };
 function saveCust(acctKey, code, store){
   const list = (window.FFM_CUST_SHARED || []).filter(x => !(x.acct === acctKey && x.name.trim().toLowerCase() === store.trim().toLowerCase()));
   list.push({ acct: acctKey, code, name: store.trim() });

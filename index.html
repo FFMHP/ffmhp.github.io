@@ -588,7 +588,7 @@ button.danger{color:var(--err);border-color:var(--err)}
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 19/11/2026 · v74</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 20/11/2026 · v76</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
@@ -1961,6 +1961,80 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
   }
 
 
+  // Mẫu Excel "cột có tên" (góp ý Tiến 20/11): mã = cột MÃ VẬT TƯ / MÃ SP / CODE (product code) hoặc BARCODE / MÃ VẠCH / MÃ HÀNG;
+  // SL = cột SL / SỐ LƯỢNG / SL ĐẶT / SỐ LƯỢNG ĐẶT. Có cột Mã vật tư -> lấy product code (tách màu G/R cùng barcode), không có -> lấy barcode.
+  const COLQ_RE = /^(sl|so luong)( dat)?$/, COLPC_RE = /^(ma vat tu|ma sp|code|product code)$/, COLBC_RE = /^(barcode|ma vach|ma hang)$/;
+  function parseColSheet(ws) {
+    const h = findHeader(ws, H => {
+      const q = H.findIndex(x => x && COLQ_RE.test(x)), p = H.findIndex(x => x && COLPC_RE.test(x)), b = H.findIndex(x => x && COLBC_RE.test(x));
+      return q >= 0 && (p >= 0 || b >= 0) ? { cQty: q, cPc: p, cBc: b, cName: H.findIndex(x => x && /^ten/.test(x)) } : null;
+    });
+    if (!h) return null;
+    const lines = [], issues = [];
+    const all = root.FFM_PC ? Object.values(root.FFM_PC).flat() : [];
+    const known = new Set(all.map(x => x[0]));
+    for (let r = h.row + 1; r <= h.range.e.r; r++) {
+      const q = cellNum(ws, r, h.cQty), bcRaw = h.cBc >= 0 ? cellText(ws, r, h.cBc) : '';
+      let pc = h.cPc >= 0 ? cellText(ws, r, h.cPc).trim().toUpperCase() : '';
+      const bc = bcRaw.replace(/\D/g, '');
+      if (!pc && !bc) continue;
+      if (q == null || q === 0) continue;
+      if (h.cPc < 0) { lines.push(stdLine(r + 1, bcRaw, q, h.cName >= 0 ? cellText(ws, r, h.cName) : '')); continue; }
+      const ln = { row: r + 1, barcode: bc, productCode: pc, qty: q, flags: [] };
+      if ((!pc || (known.size && !known.has(pc))) && bc && root.FFM_PC && root.FFM_PC[bc.padStart(14, '0')]) {
+        const c = root.FFM_PC[bc.padStart(14, '0')];
+        if (c.length === 1) { ln.flags.push({ level: 'warn', msg: `Mã vật tư "${pc || '(trống)'}" không có trong DMSP; lấy theo barcode: ${c[0][0]}. Kiểm tra lại.` }); ln.productCode = pc = c[0][0]; }
+      }
+      if (!pc) ln.flags.push({ level: 'err', msg: 'Thiếu Mã vật tư (product code)' });
+      else if (known.size && !known.has(pc)) ln.flags.push({ level: 'warn', msg: `Product code ${pc} không có trong DMSP. Kiểm tra lại mã.` });
+      if (Number.isNaN(q)) ln.flags.push({ level: 'err', msg: `Số lượng không phải số: "${cellText(ws, r, h.cQty)}"` });
+      else if (q < 0 || !Number.isInteger(q)) ln.flags.push({ level: 'err', msg: 'Số lượng âm hoặc lẻ thập phân' });
+      const dm = pc ? (all.find(x => x[0] === pc) || [])[1] : '';
+      ln.name = `${pc || '?'} · ${dm || (h.cName >= 0 ? norm(cellText(ws, r, h.cName)) : '')}`;
+      lines.push(ln);
+    }
+    if (h.cPc >= 0) { const seen = {}; lines.forEach(l => { if (l.productCode) { if (seen[l.productCode]) l.flags.push({ level: 'warn', msg: `Trùng Product code với dòng ${seen[l.productCode]}` }); else seen[l.productCode] = l.row; } }); }
+    else dupCheck(lines, issues);
+    if (!lines.length) issues.push({ level: 'err', msg: 'Không có dòng nào có số lượng đặt hàng.' });
+    const sum = lines.reduce((s, l) => s + (l.qty || 0), 0);
+    issues.push({ level: 'info', msg: `Đơn Excel: ${lines.length} dòng, tổng SL ${sum}. Mã lấy cột "${cellText(ws, h.row, h.cPc >= 0 ? h.cPc : h.cBc)}", SL lấy cột "${cellText(ws, h.row, h.cQty)}".` });
+    return { lines, issues, pcMode: h.cPc >= 0 };
+  }
+  function sheetCode(ws, re) {
+    for (const a in ws) { if (a[0] === '!') continue; const m = String(ws[a].v == null ? '' : ws[a].v).match(re); if (m) return m[1].toUpperCase(); }
+    return '';
+  }
+  // Hiền Lương Excel mới (.xlsx, 20/11): [Mã vật tư | BarCode | Tên vật tư | SL ĐẶT | Đơn giá | HIENLUONG0001]
+  function parseHienLuongCols(acct, wb) {
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const s = parseColSheet(ws);
+    if (!s) return null;
+    const code = sheetCode(ws, /^\s*(HIENLUONG\d{3,})\s*$/i);
+    const hit = acct.customers.find(c => c.code.toUpperCase() === (code || acct.fixedCustomer));
+    if (code && !hit) s.issues.push({ key: 'customer', level: 'err', msg: `Mã ${code} ghi trên file không có trong DMKH. Kiểm tra lại.` });
+    else if (code) s.issues.push({ key: 'customer', level: 'info', msg: `Mã KH lấy theo mã ghi trên file: ${hit.code} (${hit.name}).` });
+    return { prefix: acct.prefix, seq: acct.seq, abbr: '', noAbbr: true, pcMode: s.pcMode, customer: hit ? hit.code : (code || acct.fixedCustomer), store: 'Siêu thị Hiền Lương', lines: s.lines, issues: s.issues };
+  }
+  // Clever mẫu mới (20/11): ô trên cùng [tên cửa hàng | CLEVERFOODxx], bảng [Mã hàng | Tên hàng hóa | Số lượng]
+  function parseCleverCols(acct, wb) {
+    const out = [];
+    for (const sn of wb.SheetNames) {
+      const ws = wb.Sheets[sn];
+      const code = sheetCode(ws, /^\s*(CLEVERFOOD\d+)\s*$/i);
+      const s = parseColSheet(ws);
+      if (!s || !s.lines.length) continue;
+      const known = code ? acct.customers.find(c => c.code.toUpperCase() === code) : null;
+      if (!code) s.issues.push({ key: 'customer', level: 'err', msg: 'File không ghi mã KH (CLEVERFOODxx). Chọn cửa hàng ở ô Mã khách hàng.' });
+      else if (!known) s.issues.push({ key: 'customer', level: 'warn', msg: `Mã KH ${code} trên file không có trong DMKH. Kiểm tra lại.` });
+      else s.issues.push({ key: 'customer', level: 'info', msg: `Mã KH lấy theo mã ghi trên file: ${known.code} (${known.name}).` });
+      const abbr = known ? acct.abbrOf(known.name) : '';
+      if (!abbr) s.issues.push({ key: 'po', level: 'err', msg: 'Không tạo được chữ tắt cửa hàng cho số đơn. Nhập tay Số đơn.' });
+      out.push({ prefix: acct.prefix, seq: acct.seq, abbr, noAbbr: false, pcMode: s.pcMode, customer: known ? known.code : code, store: known ? known.name : code, sheet: wb.SheetNames.length > 1 ? sn : undefined, lines: s.lines, issues: s.issues });
+    }
+    if (!out.length) return null;
+    return out.length > 1 ? { multi: out } : out[0];
+  }
+
   /* ================= đợt 4 (13/11 chiều): Kids Plaza, Korea PT, LMLUONG, Tatamart ================= */
   // Kids Plaza: mỗi sheet "PO …" = 1 đơn; SL = cột "Quantity (Số lượng)" đầu tiên (Kids điền); số đơn KPLAZA + ngày đặt + -01, -02 theo thứ tự sheet
   function parseKidsPlaza(acct, wb, fileName) {
@@ -2125,6 +2199,64 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
   }
 
   /* JMART (13/11 → 16/11): PDF "PHIẾU ĐẶT HÀNG NHÀ CUNG CẤP" · SL in dạng "24.000" (= 24) · số đơn = Số phiếu đặt (DH…) */
+  // Annam Gourmet (ANGMT, góp ý Thắng 19/11): PDF "PURCHASE ORDER CONFIRMATION" (AGMPO…), bảng [No | Item code | BarCode | Description | Store | Quantity | Cost price VND | … | Disc. pct. | Disc. amount | Net amount VND]
+  // lấy BarCode + Quantity ("6.00" = 6) + Cost price VND; đối chiếu SL × giá × (1 - CK%) với Net amount · số đơn = Purchase order ID · cửa hàng dò theo ô Store
+  function parseAnnam(acct, items, fileName) {
+    const issues = [], rows = [];
+    const pages = [...new Set(items.map(x => x.page))];
+    const pageItems = {};
+    for (const pn of pages) {
+      const P = mergeRuns(items.filter(x => x.page === pn));
+      pageItems[pn] = P;
+      const F = re => P.filter(x => re.test(x.t)).sort((a, b) => a.x0 - b.x0);
+      const hBc = F(/^barcode$/i)[0], hQty = F(/^quantity$/i)[0];
+      if (!hBc || !hQty) continue;
+      const hPrice = F(/^cost price/i)[0], hNet = F(/^net amount/i)[0], hDisc = F(/^disc\.?$/i)[0];
+      const heads = { no: F(/^no$/i)[0], item: F(/^item code$/i)[0], bc: hBc, name: F(/^description$/i)[0], store: F(/^store$/i).filter(x => x.y0 > hBc.y0 - 5)[0], qty: hQty, price: hPrice, priceFr: F(/^cost price/i)[1], unit: F(/^unit$/i)[0], disc: hDisc, discAmt: F(/^disc\.? amount/i)[0], net: hNet, netFr: F(/^net amount/i)[1] };
+      const stat = F(/^statistic$/i)[0];
+      const skip = it => /^(vnd|fr|pct\.?|pcs)$/i.test(it.t);
+      const got = pdfTable(P, { heads, qty: 'qty', bc: 'bc', name: 'name', top: Math.max(hBc.y1, hQty.y1) + 8, stop: stat ? stat.y0 - 1 : 0, skip });
+      got.forEach(r => { if (/^\d{1,3}(,\d{3})*\.\d{2}$/.test(r.anchor.t)) rows.push(r); });
+    }
+    if (!rows.length) return { error: 'Không thấy cột BarCode / Quantity trên PO. File này có đúng mẫu Purchase Order Confirmation của Annam Gourmet không?' };
+    const num = cs => { const t = cs.map(x => x.t).join('').replace(/,/g, ''); return /^\d+(\.\d+)?$/.test(t) ? Number(t) : null; };
+    const lines = rows.map((r, i) => {
+      const q = Number(r.anchor.t.replace(/,/g, ''));
+      const ln = stdLine(i + 1, r.bc, q, r.name);
+      const price = num(r.cell('price')), disc = num(r.cell('disc')), net = num(r.cell('net'));
+      ln.price = price; ln.amount = net;
+      if (price != null) ln.name = `${ln.name} · giá ${price.toLocaleString('en-US')}${disc ? ` · CK ${disc}%` : ''}`;
+      if (price == null) ln.flags.push({ level: 'warn', msg: 'Không đọc được Cost price trên PO.' });
+      else if (net != null && Math.abs(q * price * (1 - (disc || 0) / 100) - net) > 1) ln.flags.push({ level: 'warn', msg: `SL × giá${disc ? ' × (1 - CK)' : ''} ≠ Net amount (${net.toLocaleString('en-US')}). Kiểm tra SL theo PO.` });
+      if (root.FUJI && ln.barcode && /^\d{8}$|^\d{12,14}$/.test(ln.barcode) && !root.FUJI.gtinOk(ln.barcode)) ln.flags.push({ level: 'warn', msg: 'Barcode sai số kiểm tra (có thể đọc thiếu số)' });
+      return ln;
+    });
+    dupCheck(lines, issues);
+    const P1 = pageItems[pages[0]] || [];
+    const txt = allText(P1);
+    const mPo = txt.match(/\b(AGMPO\d{6,})\b/i) || fileName.match(/(AGMPO\d{6,})/i);
+    const po = mPo ? mPo[1].toUpperCase() : '';
+    if (!po) issues.push({ key: 'po', level: 'err', msg: 'Không đọc được Purchase order ID (AGMPO…). Nhập tay Số đơn.' });
+    const od = (itemAfter(P1, /^order date/i) || {}).t || '';
+    // ô Store + Delivery/Store address nằm ở cột phải, trên bảng hàng
+    const lab = P1.find(x => /^store \.*:?$/i.test(x.t)) || P1.find(x => /^store\b/i.test(x.t) && /\.{3}/.test(x.t));
+    const hb = P1.find(x => /^barcode$/i.test(x.t));
+    const storeTxt = lab ? P1.filter(x => x.x0 >= lab.x0 - 5 && x.y0 >= lab.y0 - 3 && (!hb || x.y0 < hb.y0 - 5)).sort((a, b) => (a.y0 - b.y0) || (a.x0 - b.x0)).map(x => x.t).join(' ') : txt.slice(0, 600);
+    const toks = ' ' + key(storeTxt) + ' ';
+    const BRAND = /^(annam|an|nam|gourmet|angmt|store|shop)$/;
+    let best = null, bestN = 0;
+    acct.customers.forEach(c => {
+      const w = key(c.name).split(' ').filter(x => x && !BRAND.test(x));
+      if (w.length && w.every(x => toks.includes(' ' + x + ' ')) && w.length > bestN) { best = c; bestN = w.length; }
+    });
+    const storeLine = (storeTxt.match(/([A-Z0-9]{3,}-[^:]*?)(?:\s+Delivery|$)/) || [])[1] || '';
+    if (!best) issues.push({ key: 'customer', level: 'err', msg: 'Không dò được cửa hàng Annam Gourmet theo ô Store trên PO. Chọn ở ô Mã khách hàng (rồi bấm Ghi nhớ).' });
+    const sum = lines.reduce((s, l) => s + (l.qty || 0), 0);
+    issues.push({ level: 'info', msg: `PO Annam Gourmet: ${lines.length} dòng, tổng SL ${sum}. Lấy cột BarCode, Quantity, Cost price (giá hiện ở tên SP để đối chiếu; form FORM_2 không có cột giá).` });
+    if (od) issues.push({ level: 'info', msg: `Order date trên PO: ${od}.` });
+    return { fixedPo: true, editable: true, po, customer: best ? best.code : '', store: best ? best.name : (storeLine || 'Annam Gourmet'), lines, issues, source: 'pdf' };
+  }
+
   function parseJmart(acct, items, fileName) {
     const issues = [];
     const M = mergeRuns(items), F = re => M.find(x => re.test(x.t));
@@ -2377,11 +2509,11 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
       parse(wb, fileName) { return parseFreshGarden(this, wb, fileName || ''); }
     },
     HIENLUONG: {
-      label: 'Hiền Lương (.xls)', prefix: 'HIENLUONG', seq: 'dup', noAbbr: true,
+      label: 'Hiền Lương (.xls hoặc .xlsx)', prefix: 'HIENLUONG', seq: 'dup', noAbbr: true,
       accept: '.xls,.xlsx', leadDays: 3, workDays: true, fromNgayVe: true,
       fixedCustomer: 'HIENLUONG0001',
       customers: [{ code: 'HIENLUONG0001', name: 'HIENLUONG Hòa Xá' }],
-      parse(wb, fileName) { return parseHienLuong(this, wb, fileName || ''); }
+      parse(wb, fileName) { return parseHienLuongCols(this, wb) || parseHienLuong(this, wb, fileName || ''); }
     },
     HINODE: pdfAcct('Hinode (PDF)', parseHinode, {
       fixedCustomer: 'HINODE0001', customers: [{ code: 'HINODE0001', name: 'HINODE HOÀI ĐỨC' }]
@@ -2418,7 +2550,7 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
       // chữ tắt = chữ cái đầu tên cửa hàng (bỏ số): LỮ ĐOÀN 21 LÊ ĐỨC THỌ -> LDLDT (anh Tài chốt 13/11)
       abbrOf(name) { return shortName(name, this.brandWords); },
       customers: [{"code": "CLEVERFOOD03", "name": "LỮ ĐOÀN 136 HỒ TÙNG MẬU"}, {"code": "CLEVERFOOD04", "name": "LỮ ĐOÀN NGHĨA ĐÔ"}, {"code": "CLEVERFOOD06", "name": "LỮ ĐOÀN 21 LÊ ĐỨC THỌ"}],
-      parse(wb) { return storeSheetAcct(this, wb); }
+      parse(wb) { const r = storeSheetAcct(this, wb); return r.error ? (parseCleverCols(this, wb) || r) : r; }
     },
     FMKT: pdfAcct('Family Foods Market (PDF)', parseFamilyFoods, {
       brandWords: ['familyfoodmarket', 'family', 'foods', 'food', 'market'],
@@ -2497,6 +2629,12 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
     ,
     JMART: pdfAcct('JMART (PDF)', parseJmart, {
       fixedCustomer: 'JMART0001', customers: [{ code: 'JMART0001', name: 'CÔNG TY CỔ PHẨN THƯƠNG MẠI DỊCH VỤ JM QUỐC TẾ' }]
+    })
+
+    ,
+    // Annam Gourmet (20/11, góp ý Thắng): PO PDF, số đơn = Purchase order ID (AGMPO…), cửa hàng dò theo ô Store (vd RGSTBP-Gourmet Shop Tien Bo Plaza -> ANGMT019)
+    ANG: pdfAcct('Annam Gourmet (ANGMT, PDF)', parseAnnam, {
+      customers: [{"code": "ANGMT005", "name": "ANNAM GOURMET XUÂN DIỆU"}, {"code": "ANGMT019", "name": "ANNAM GOURMET TIẾN BỘ PLAZA"}, {"code": "ANGMT015", "name": "ANNAM GOURMET LONG BIÊN"}, {"code": "ANGMT001", "name": "ANNAM GOURMET LÊ LỢI"}, {"code": "ANGMT002", "name": "ANNAM GOURMET HAI BÀ TRƯNG"}, {"code": "ANGMT003", "name": "ANNAM GOURMET AN PHÚ"}, {"code": "ANGMT004", "name": "ANNAM GOURMET PHÚ MỸ HƯNG"}, {"code": "ANGMT006", "name": "ANNAM GOURMET ESTELLA"}, {"code": "ANGMT007", "name": "ANNAM GOURMET SÀI GÒN PEARL"}, {"code": "ANGMT009", "name": "ANNAM GOURMET FELIZ EN VISTA"}, {"code": "ANGMT010", "name": "ANNAM GOURMET LANDMARK 81"}, {"code": "ANGMT012", "name": "ANNAM GOURMET NGUYỄN VĂN TRỖI"}, {"code": "ANGMT016", "name": "ANNAM GOURMET ASCENTIA"}, {"code": "ANGMT017", "name": "ANNAM GOURMET THẢO ĐIỀN GREEN"}, {"code": "ANGMT018", "name": "ANNAM GOURMET MASTERI THẢO ĐIỀN"}, {"code": "ANGMT020", "name": "ANNAM GOURMET VISTA AN KHÁNH"}, {"code": "ANGMT021", "name": "ANNAM GOURMET BECAMEX"}, {"code": "ANGMT_SG_008", "name": "ANNAM GOURMET Q2 TERRACE"}]
     })
 
     ,
@@ -2702,7 +2840,7 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
 (function (root) {
   const BASE = root.FFM_DATA_BASE || 'data/';
   const FILES = { dmkh: 'DMKH.xlsx', dmsp: 'DMSP.xlsx', map: 'Code chuyển đổi.xlsx', tpl: 'Form final.xlsx' };
-  const PREFIX = { KKTC: 'KKTC', MOR: 'MORGT', BRG: 'BRGMART', AEON: 'AEON', SOIBIEN: 'SOIBIEN', ANNHIEN: 'ANHN', MIOMIO: 'MIOMIOW', FANTASY: 'FANTASY', FGARDEN: 'FGARDEN', HIENLUONG: 'HIENLUONG', HINODE: 'HINODE', JAPAUS: 'JAPAUS', SAKUKO: 'SAKUKO', SIBA: 'SIBA', ANHVIET: 'ANHVIET', CLEVER: 'CLEVERFOOD', FMKT: 'FMKTHNI', KAISER: 'CVS0', OHMEE: 'OHMEE', RFOOD: 'RFOODTP', TOP5: 'TOP5_MART', WEFRESH: 'WEFRESH', KPLAZA: 'KPLAZA', KOREAN: 'KOREAN', LMLUONG: 'LMLG', TATAMART: 'TATAMAT', JMART: 'JMART', SATRA: ['SATRA', 'STFD'] };
+  const PREFIX = { KKTC: 'KKTC', MOR: 'MORGT', BRG: 'BRGMART', AEON: 'AEON', SOIBIEN: 'SOIBIEN', ANNHIEN: 'ANHN', MIOMIO: 'MIOMIOW', FANTASY: 'FANTASY', FGARDEN: 'FGARDEN', HIENLUONG: 'HIENLUONG', HINODE: 'HINODE', JAPAUS: 'JAPAUS', SAKUKO: 'SAKUKO', SIBA: 'SIBA', ANHVIET: 'ANHVIET', CLEVER: 'CLEVERFOOD', FMKT: 'FMKTHNI', KAISER: 'CVS0', OHMEE: 'OHMEE', RFOOD: 'RFOODTP', TOP5: 'TOP5_MART', WEFRESH: 'WEFRESH', KPLAZA: 'KPLAZA', KOREAN: 'KOREAN', LMLUONG: 'LMLG', TATAMART: 'TATAMAT', JMART: 'JMART', ANG: 'ANGMT', SATRA: ['SATRA', 'STFD'] };
   const LABEL = { dmkh: 'DMKH', dmsp: 'DMSP', map: 'Code chuyển đổi', tpl: 'Form final' };
   const CACHE = 'ffm-data-v1:';
   // Google Apps Script: thống kê + bảng "Code AEON" team tự thêm
@@ -3106,7 +3244,7 @@ $('addBtn').addEventListener('click', () => {
   $('addBc').value = ''; $('addPc').value = ''; acctNote();
 });
 // Mã KH: team tự thêm (chọn tay ở ô Mã khách hàng là tự lưu; hoặc thêm trong ô "+ Thêm mã khách hàng")
-const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/, ANNHIEN: /^ANHN/, MIOMIO: /^MIOMIOW/, FANTASY: /^FANTASY/, FGARDEN: /^FGARDEN/, HIENLUONG: /^HIENLUONG/, HINODE: /^HINODE/, JAPAUS: /^JAPAUS/, SAKUKO: /^SAKUKO/, SIBA: /^SIBA/, ANHVIET: /^ANHVIET/, CLEVER: /^CLEVERFOOD/, FMKT: /^FMKTHNI/, KAISER: /^CVS/, OHMEE: /^OHMEE/, RFOOD: /^RFOODTP/, TOP5: /^TOP5_MART/, WEFRESH: /^WEFRESH/, KPLAZA: /^KPLAZA/, KOREAN: /^KOREAN/, LMLUONG: /^LMLG/, TATAMART: /^TATAMAT/, JMART: /^JMART/, SATRA: /^(SATRA|STFD)/ };
+const CODE_PREFIX = { KKTC: /^KKTC/, MOR: /^MORGT/, BRG: /^BRGMART/, AEON: /^AEON/, SOIBIEN: /^SOIBIEN/, ANNHIEN: /^ANHN/, MIOMIO: /^MIOMIOW/, FANTASY: /^FANTASY/, FGARDEN: /^FGARDEN/, HIENLUONG: /^HIENLUONG/, HINODE: /^HINODE/, JAPAUS: /^JAPAUS/, SAKUKO: /^SAKUKO/, SIBA: /^SIBA/, ANHVIET: /^ANHVIET/, CLEVER: /^CLEVERFOOD/, FMKT: /^FMKTHNI/, KAISER: /^CVS/, OHMEE: /^OHMEE/, RFOOD: /^RFOODTP/, TOP5: /^TOP5_MART/, WEFRESH: /^WEFRESH/, KPLAZA: /^KPLAZA/, KOREAN: /^KOREAN/, LMLUONG: /^LMLG/, TATAMART: /^TATAMAT/, JMART: /^JMART/, ANG: /^ANGMT/, SATRA: /^(SATRA|STFD)/ };
 function saveCust(acctKey, code, store){
   const list = (window.FFM_CUST_SHARED || []).filter(x => !(x.acct === acctKey && x.name.trim().toLowerCase() === store.trim().toLowerCase()));
   list.push({ acct: acctKey, code, name: store.trim() });
