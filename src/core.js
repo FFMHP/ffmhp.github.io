@@ -616,7 +616,7 @@
       let cBc = -1, cCode = -1, code = '';
       for (let c = range.s.c; c <= Math.min(range.e.c, 40); c++) {
         const t = cellText(ws, r, c).trim(), f = fold(t);
-        if (cBc < 0 && /^(barcode|ma hh|ma vach|ma hang hoa)$/.test(f)) cBc = c;
+        if (cBc < 0 && (acct.bcHead || /^(barcode|ma hh|ma vach|ma hang hoa)$/).test(f)) cBc = c;
         if (cCode < 0 && acct.codeRe.test(t)) { cCode = c; code = t.toUpperCase(); }
       }
       if (cBc < 0 || cCode < 1) continue;
@@ -1379,6 +1379,8 @@
       accept: '.xlsx,.xls', leadDays: 3, workDays: true, fromNgayVe: true,
       // mỗi sheet = 1 cửa hàng = 1 đơn · cột SL = cột có tiêu đề tên cửa hàng, kế bên là mã CVS000xx · số đơn KAISER + chữ tắt + YYMMDD
       codeRe: /^CVS\d{3,}$/i, codeHint: 'CVS000xx', brandWords: ['kaiser', 'so', 'duong', 'pho', 'city'],
+      // góp ý Tiến 20/11: file Kaiser ghi cột barcode là "Mã hàng"
+      bcHead: /^(barcode|ma hh|ma vach|ma hang hoa|ma hang)$/,
       abbrOf(name, sheet) { return shortName(String(name).replace(/^.*?_/, ''), this.brandWords) || shortName(sheet || '', this.brandWords); },
       customers: [{"code": "CVS00011", "name": "KAISER_Times City"}, {"code": "CVS00053", "name": "KAISER_Số 15 Nguyễn Văn Cừ"}, {"code": "CVS00008", "name": "KAISER_Số 37-39 Đường Phố Huế"}],
       parse(wb) { return storeSheetAcct(this, wb); }
