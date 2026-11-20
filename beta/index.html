@@ -613,7 +613,7 @@ button.danger{color:var(--err);border-color:var(--err)}
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 19/11/2026 · v74</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 20/11/2026 · v75</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
@@ -1986,6 +1986,80 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
   }
 
 
+  // Mẫu Excel "cột có tên" (góp ý Tiến 20/11): mã = cột MÃ VẬT TƯ / MÃ SP / CODE (product code) hoặc BARCODE / MÃ VẠCH / MÃ HÀNG;
+  // SL = cột SL / SỐ LƯỢNG / SL ĐẶT / SỐ LƯỢNG ĐẶT. Có cột Mã vật tư -> lấy product code (tách màu G/R cùng barcode), không có -> lấy barcode.
+  const COLQ_RE = /^(sl|so luong)( dat)?$/, COLPC_RE = /^(ma vat tu|ma sp|code|product code)$/, COLBC_RE = /^(barcode|ma vach|ma hang)$/;
+  function parseColSheet(ws) {
+    const h = findHeader(ws, H => {
+      const q = H.findIndex(x => x && COLQ_RE.test(x)), p = H.findIndex(x => x && COLPC_RE.test(x)), b = H.findIndex(x => x && COLBC_RE.test(x));
+      return q >= 0 && (p >= 0 || b >= 0) ? { cQty: q, cPc: p, cBc: b, cName: H.findIndex(x => x && /^ten/.test(x)) } : null;
+    });
+    if (!h) return null;
+    const lines = [], issues = [];
+    const all = root.FFM_PC ? Object.values(root.FFM_PC).flat() : [];
+    const known = new Set(all.map(x => x[0]));
+    for (let r = h.row + 1; r <= h.range.e.r; r++) {
+      const q = cellNum(ws, r, h.cQty), bcRaw = h.cBc >= 0 ? cellText(ws, r, h.cBc) : '';
+      let pc = h.cPc >= 0 ? cellText(ws, r, h.cPc).trim().toUpperCase() : '';
+      const bc = bcRaw.replace(/\D/g, '');
+      if (!pc && !bc) continue;
+      if (q == null || q === 0) continue;
+      if (h.cPc < 0) { lines.push(stdLine(r + 1, bcRaw, q, h.cName >= 0 ? cellText(ws, r, h.cName) : '')); continue; }
+      const ln = { row: r + 1, barcode: bc, productCode: pc, qty: q, flags: [] };
+      if ((!pc || (known.size && !known.has(pc))) && bc && root.FFM_PC && root.FFM_PC[bc.padStart(14, '0')]) {
+        const c = root.FFM_PC[bc.padStart(14, '0')];
+        if (c.length === 1) { ln.flags.push({ level: 'warn', msg: `Mã vật tư "${pc || '(trống)'}" không có trong DMSP; lấy theo barcode: ${c[0][0]}. Kiểm tra lại.` }); ln.productCode = pc = c[0][0]; }
+      }
+      if (!pc) ln.flags.push({ level: 'err', msg: 'Thiếu Mã vật tư (product code)' });
+      else if (known.size && !known.has(pc)) ln.flags.push({ level: 'warn', msg: `Product code ${pc} không có trong DMSP. Kiểm tra lại mã.` });
+      if (Number.isNaN(q)) ln.flags.push({ level: 'err', msg: `Số lượng không phải số: "${cellText(ws, r, h.cQty)}"` });
+      else if (q < 0 || !Number.isInteger(q)) ln.flags.push({ level: 'err', msg: 'Số lượng âm hoặc lẻ thập phân' });
+      const dm = pc ? (all.find(x => x[0] === pc) || [])[1] : '';
+      ln.name = `${pc || '?'} · ${dm || (h.cName >= 0 ? norm(cellText(ws, r, h.cName)) : '')}`;
+      lines.push(ln);
+    }
+    if (h.cPc >= 0) { const seen = {}; lines.forEach(l => { if (l.productCode) { if (seen[l.productCode]) l.flags.push({ level: 'warn', msg: `Trùng Product code với dòng ${seen[l.productCode]}` }); else seen[l.productCode] = l.row; } }); }
+    else dupCheck(lines, issues);
+    if (!lines.length) issues.push({ level: 'err', msg: 'Không có dòng nào có số lượng đặt hàng.' });
+    const sum = lines.reduce((s, l) => s + (l.qty || 0), 0);
+    issues.push({ level: 'info', msg: `Đơn Excel: ${lines.length} dòng, tổng SL ${sum}. Mã lấy cột "${cellText(ws, h.row, h.cPc >= 0 ? h.cPc : h.cBc)}", SL lấy cột "${cellText(ws, h.row, h.cQty)}".` });
+    return { lines, issues, pcMode: h.cPc >= 0 };
+  }
+  function sheetCode(ws, re) {
+    for (const a in ws) { if (a[0] === '!') continue; const m = String(ws[a].v == null ? '' : ws[a].v).match(re); if (m) return m[1].toUpperCase(); }
+    return '';
+  }
+  // Hiền Lương Excel mới (.xlsx, 20/11): [Mã vật tư | BarCode | Tên vật tư | SL ĐẶT | Đơn giá | HIENLUONG0001]
+  function parseHienLuongCols(acct, wb) {
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const s = parseColSheet(ws);
+    if (!s) return null;
+    const code = sheetCode(ws, /^\s*(HIENLUONG\d{3,})\s*$/i);
+    const hit = acct.customers.find(c => c.code.toUpperCase() === (code || acct.fixedCustomer));
+    if (code && !hit) s.issues.push({ key: 'customer', level: 'err', msg: `Mã ${code} ghi trên file không có trong DMKH. Kiểm tra lại.` });
+    else if (code) s.issues.push({ key: 'customer', level: 'info', msg: `Mã KH lấy theo mã ghi trên file: ${hit.code} (${hit.name}).` });
+    return { prefix: acct.prefix, seq: acct.seq, abbr: '', noAbbr: true, pcMode: s.pcMode, customer: hit ? hit.code : (code || acct.fixedCustomer), store: 'Siêu thị Hiền Lương', lines: s.lines, issues: s.issues };
+  }
+  // Clever mẫu mới (20/11): ô trên cùng [tên cửa hàng | CLEVERFOODxx], bảng [Mã hàng | Tên hàng hóa | Số lượng]
+  function parseCleverCols(acct, wb) {
+    const out = [];
+    for (const sn of wb.SheetNames) {
+      const ws = wb.Sheets[sn];
+      const code = sheetCode(ws, /^\s*(CLEVERFOOD\d+)\s*$/i);
+      const s = parseColSheet(ws);
+      if (!s || !s.lines.length) continue;
+      const known = code ? acct.customers.find(c => c.code.toUpperCase() === code) : null;
+      if (!code) s.issues.push({ key: 'customer', level: 'err', msg: 'File không ghi mã KH (CLEVERFOODxx). Chọn cửa hàng ở ô Mã khách hàng.' });
+      else if (!known) s.issues.push({ key: 'customer', level: 'warn', msg: `Mã KH ${code} trên file không có trong DMKH. Kiểm tra lại.` });
+      else s.issues.push({ key: 'customer', level: 'info', msg: `Mã KH lấy theo mã ghi trên file: ${known.code} (${known.name}).` });
+      const abbr = known ? acct.abbrOf(known.name) : '';
+      if (!abbr) s.issues.push({ key: 'po', level: 'err', msg: 'Không tạo được chữ tắt cửa hàng cho số đơn. Nhập tay Số đơn.' });
+      out.push({ prefix: acct.prefix, seq: acct.seq, abbr, noAbbr: false, pcMode: s.pcMode, customer: known ? known.code : code, store: known ? known.name : code, sheet: wb.SheetNames.length > 1 ? sn : undefined, lines: s.lines, issues: s.issues });
+    }
+    if (!out.length) return null;
+    return out.length > 1 ? { multi: out } : out[0];
+  }
+
   /* ================= đợt 4 (13/11 chiều): Kids Plaza, Korea PT, LMLUONG, Tatamart ================= */
   // Kids Plaza: mỗi sheet "PO …" = 1 đơn; SL = cột "Quantity (Số lượng)" đầu tiên (Kids điền); số đơn KPLAZA + ngày đặt + -01, -02 theo thứ tự sheet
   function parseKidsPlaza(acct, wb, fileName) {
@@ -2402,11 +2476,11 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
       parse(wb, fileName) { return parseFreshGarden(this, wb, fileName || ''); }
     },
     HIENLUONG: {
-      label: 'Hiền Lương (.xls)', prefix: 'HIENLUONG', seq: 'dup', noAbbr: true,
+      label: 'Hiền Lương (.xls hoặc .xlsx)', prefix: 'HIENLUONG', seq: 'dup', noAbbr: true,
       accept: '.xls,.xlsx', leadDays: 3, workDays: true, fromNgayVe: true,
       fixedCustomer: 'HIENLUONG0001',
       customers: [{ code: 'HIENLUONG0001', name: 'HIENLUONG Hòa Xá' }],
-      parse(wb, fileName) { return parseHienLuong(this, wb, fileName || ''); }
+      parse(wb, fileName) { return parseHienLuongCols(this, wb) || parseHienLuong(this, wb, fileName || ''); }
     },
     HINODE: pdfAcct('Hinode (PDF)', parseHinode, {
       fixedCustomer: 'HINODE0001', customers: [{ code: 'HINODE0001', name: 'HINODE HOÀI ĐỨC' }]
@@ -2443,7 +2517,7 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
       // chữ tắt = chữ cái đầu tên cửa hàng (bỏ số): LỮ ĐOÀN 21 LÊ ĐỨC THỌ -> LDLDT (anh Tài chốt 13/11)
       abbrOf(name) { return shortName(name, this.brandWords); },
       customers: [{"code": "CLEVERFOOD03", "name": "LỮ ĐOÀN 136 HỒ TÙNG MẬU"}, {"code": "CLEVERFOOD04", "name": "LỮ ĐOÀN NGHĨA ĐÔ"}, {"code": "CLEVERFOOD06", "name": "LỮ ĐOÀN 21 LÊ ĐỨC THỌ"}],
-      parse(wb) { return storeSheetAcct(this, wb); }
+      parse(wb) { const r = storeSheetAcct(this, wb); return r.error ? (parseCleverCols(this, wb) || r) : r; }
     },
     FMKT: pdfAcct('Family Foods Market (PDF)', parseFamilyFoods, {
       brandWords: ['familyfoodmarket', 'family', 'foods', 'food', 'market'],
