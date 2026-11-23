@@ -588,7 +588,7 @@ button.danger{color:var(--err);border-color:var(--err)}
 
 <footer class="foot">
   <span>Hyperion · FFM Tools</span>
-  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 20/11/2026 · v78</span>
+  <span class="pill demo" id="ver" title="So phiên bản này giữa các máy để biết máy nào đang dùng bản cũ">Phiên bản 23/11/2026 · v79</span>
   <button type="button" class="linkbtn" id="fbBtn">Báo lỗi / góp ý</button>
 </footer>
 
@@ -1945,7 +1945,7 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
       const p = H.findIndex(x => x && /^ma vat tu$|^ma hang$|^product code$/.test(x)), q = H.findIndex(x => x && /^dat$|^sl dat|^so luong/.test(x));
       return p >= 0 && q >= 0 ? { cPc: p, cQty: q, cBc: H.findIndex(x => x && /barcode|ma vach/.test(x)), cName: H.findIndex(x => x && /^ten/.test(x)) } : null;
     });
-    if (!h) return { error: 'Không thấy dòng tiêu đề có cột "Mã vật tư" và cột "Đặt". File này có đúng mẫu đơn Excel Wefresh không?' };
+    if (!h) return parseWefreshBc(acct, wb, ws) || { error: 'Không thấy dòng tiêu đề có cột "Mã vật tư" và cột "Đặt". File này có đúng mẫu đơn Excel Wefresh không?' };
     const issues = [], lines = [];
     const all = root.FFM_PC ? Object.values(root.FFM_PC).flat() : [];
     const known = new Set(all.map(x => x[0]));
@@ -1982,6 +1982,38 @@ window.FFM_AEON_MAP = {"8002590090289": "8002590090289G", "2000110063368": "8002
   }
 
 
+  // Wefresh Excel mẫu 2 (góp ý Thắng 21/11): [Barcode | Product Name | WEFRESH_174 Thái Hà | WEFRESH0001]
+  // mã = cột A "Barcode" (từ A2), SL = cột tên cửa hàng (C, từ C2), mã KH = ô ghi WEFRESHxxxx (D1); cột D bên dưới là ghi chú KM -> hiện cạnh dòng.
+  function parseWefreshBc(acct, wb, ws) {
+    const h = findHeader(ws, H => {
+      const b = H.findIndex(x => x && /^(barcode|ma vach)$/.test(x)), k = H.findIndex(x => x && /^wefresh\d{3,}$/.test(x));
+      let q = H.findIndex((x, i) => x && i !== k && /^wefresh/.test(x));
+      if (q < 0 && k > 0) q = k - 1;
+      return b >= 0 && q >= 0 && q !== b ? { cBc: b, cQty: q, cNote: k, cName: H.findIndex(x => x && /^(product name|ten)/.test(x)) } : null;
+    });
+    if (!h) return null;
+    const issues = [], lines = [];
+    for (let r = h.row + 1; r <= h.range.e.r; r++) {
+      const bcRaw = cellText(ws, r, h.cBc), q = cellNum(ws, r, h.cQty);
+      if (!bcRaw.replace(/\D/g, '')) continue;
+      if (q == null || q === 0) continue;
+      const ln = stdLine(r + 1, bcRaw, q, h.cName >= 0 ? cellText(ws, r, h.cName) : '');
+      const note = h.cNote >= 0 ? cellText(ws, r, h.cNote).trim() : '';
+      if (note) (ln.flags = ln.flags || []).push({ level: 'info', msg: 'Ghi chú trên file: ' + note });
+      lines.push(ln);
+    }
+    dupCheck(lines, issues);
+    if (!lines.length) issues.push({ level: 'err', msg: 'Không có dòng nào có số lượng đặt hàng.' });
+    const code = findCode(wb, /^\s*(WEFRESH\d{3,})\s*$/i);
+    const hit = code ? acct.customers.find(c => c.code.toUpperCase() === code) : (acct.customers.length === 1 ? acct.customers[0] : null);
+    if (code && hit) issues.push({ key: 'customer', level: 'info', msg: `Mã KH lấy theo mã ghi trên file: ${hit.code} (${hit.name}).` });
+    else if (code) issues.push({ key: 'customer', level: 'err', msg: `Mã ${code} ghi trên file không có trong DMKH. Chọn cửa hàng ở ô Mã khách hàng.` });
+    else if (hit) issues.push({ key: 'customer', level: 'warn', msg: `File không ghi mã KH; lấy cửa hàng duy nhất: ${hit.code} (${hit.name}). Kiểm tra lại.` });
+    else issues.push({ key: 'customer', level: 'err', msg: 'File không ghi mã KH (WEFRESHxxxx). Chọn cửa hàng ở ô Mã khách hàng.' });
+    const sum = lines.reduce((s, l) => s + (l.qty || 0), 0);
+    issues.push({ level: 'info', msg: `Đơn Excel Wefresh: ${lines.length} dòng, tổng SL ${sum}. Mã lấy cột "${cellText(ws, h.row, h.cBc)}", SL lấy cột "${cellText(ws, h.row, h.cQty)}". File Excel không có số đơn: số đơn = WEFRESH + ngày về đơn.` });
+    return { prefix: acct.prefix, seq: acct.seq, abbr: '', noAbbr: true, pcMode: false, customer: hit ? hit.code : (code || ''), store: hit ? hit.name : (code || 'Wefresh'), lines, issues };
+  }
   // Mẫu Excel "cột có tên" (góp ý Tiến 20/11): mã = cột MÃ VẬT TƯ / MÃ SP / CODE (product code) hoặc BARCODE / MÃ VẠCH / MÃ HÀNG;
   // SL = cột SL / SỐ LƯỢNG / SL ĐẶT / SỐ LƯỢNG ĐẶT. Có cột Mã vật tư -> lấy product code (tách màu G/R cùng barcode), không có -> lấy barcode.
   const COLQ_RE = /^(sl|so luong)( dat)?$/, COLPC_RE = /^(ma vat tu|ma sp|code|product code)$/, COLBC_RE = /^(barcode|ma vach|ma hang)$/;
